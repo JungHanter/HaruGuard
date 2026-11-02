@@ -3,6 +3,15 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// No debug-key fallback for release. Without these inputs, assembleRelease produces an unsigned APK.
+val releaseSigningInputs = listOf(
+    "HARUGUARD_KEYSTORE_FILE", "HARUGUARD_KEY_ALIAS", "HARUGUARD_STORE_PASSWORD", "HARUGUARD_KEY_PASSWORD",
+).associateWith { providers.environmentVariable(it).orNull }
+val releaseSigningReady = releaseSigningInputs.values.all { !it.isNullOrBlank() }
+check(releaseSigningReady || releaseSigningInputs.values.all { it.isNullOrBlank() }) {
+    "Release signing requires all HARUGUARD_KEYSTORE_FILE, HARUGUARD_KEY_ALIAS, HARUGUARD_STORE_PASSWORD and HARUGUARD_KEY_PASSWORD inputs."
+}
+
 android {
     namespace = "com.hanter.haruguard"
     compileSdk {
@@ -19,8 +28,20 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        if (releaseSigningReady) {
+            create("fixedRelease") {
+                storeFile = file(requireNotNull(releaseSigningInputs["HARUGUARD_KEYSTORE_FILE"]))
+                keyAlias = releaseSigningInputs["HARUGUARD_KEY_ALIAS"]
+                storePassword = releaseSigningInputs["HARUGUARD_STORE_PASSWORD"]
+                keyPassword = releaseSigningInputs["HARUGUARD_KEY_PASSWORD"]
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (releaseSigningReady) signingConfig = signingConfigs.getByName("fixedRelease")
             optimization {
                 enable = true
                 packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")
