@@ -22,20 +22,8 @@
         android:supportsRtl="true"
         android:testOnly="true"
         android:theme="@style/Theme.HaruGuard">
-        <receiver
-            android:name=".HaruGuardDeviceAdminReceiver"
-            android:exported="true"
-            android:permission="android.permission.BIND_DEVICE_ADMIN">
-            <meta-data
-                android:name="android.app.device_admin"
-                android:resource="@xml/device_admin_receiver" />
-            <intent-filter>
-                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
-            </intent-filter>
-        </receiver>
-
-        <!-- DO는 정확한 알람 권한 없이 systemExempted를 사용할 수 있다.
-             서비스는 startForeground 전에 DO를 확인한다. Lint는 알람 권한 조건만 검사한다.
+        <!-- 연결 승인을 받은 VPN 앱은 관리자 없이 systemExempted를 사용할 수 있다.
+             서비스는 startForeground 전에 VPN 승인을 확인한다. Lint는 알람 권한 조건만 검사한다.
              https://developer.android.com/develop/background-work/services/fgs/service-types#system-exempted -->
         <service
             android:name=".YouTubeVpnService"

@@ -45,7 +45,7 @@ class YouTubeVpnService : VpnService() {
             }
             ACTION_FILTER -> preferences.filteringRequested = true
             null, SERVICE_INTERFACE -> {
-                // 관리자 VPN의 시스템 시작은 마지막 선택을 복원하며, 꺼 둔 필터를 임의로 켜지 않는다.
+                // 시스템 VPN 시작은 마지막 선택을 따르며, 꺼 둔 필터를 임의로 켜지 않는다.
                 if (!preferences.filteringRequested) {
                     stopFiltering()
                     return START_NOT_STICKY
@@ -57,10 +57,13 @@ class YouTubeVpnService : VpnService() {
         session.starting()
         var unclaimedDescriptor: ParcelFileDescriptor? = null
         try {
-            val device = DpcController(this).readState()
-            check(device.isDeviceOwner) { getString(R.string.do_required) }
+            if (prepare(this) != null) {
+                fail(getString(R.string.vpn_permission_missing))
+                return START_NOT_STICKY
+            }
             val notification = notification()
-            // DO는 systemExempted 포그라운드 서비스의 공식 허용 조건이다.
+            // 연결 승인을 받은 VPN 앱 자격으로 systemExempted를 사용한다.
+            // https://developer.android.com/develop/background-work/services/fgs/service-types#system-exempted
             if (Build.VERSION.SDK_INT >= 34) {
                 startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED)
             } else {
@@ -104,7 +107,7 @@ class YouTubeVpnService : VpnService() {
             }
             fail(message)
         }
-        // 변경 잠금이 없으면 수동 시작하며, 관리자 VPN의 시스템 시작은 저장된 선택을 따른다.
+        // 앱이 임의로 재시작하지 않는다. 시스템 VPN 시작 요청은 저장된 선택을 따른다.
         return START_NOT_STICKY
     }
 
