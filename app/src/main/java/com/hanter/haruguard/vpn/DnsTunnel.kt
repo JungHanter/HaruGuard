@@ -18,7 +18,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** DNS-only split tunnel: the system resolver forwards allowed queries over a non-VPN network. */
+/** DNS 전용 분리 터널로, 허용 질의는 VPN 외부 네트워크의 시스템 resolver에 전달한다. */
 internal class DnsTunnel(
     context: Context,
     private val descriptor: ParcelFileDescriptor,
@@ -27,11 +27,13 @@ internal class DnsTunnel(
     private val onFailure: (Exception) -> Unit,
 ) : Closeable {
     private val connectivity = context.getSystemService(ConnectivityManager::class.java)
-    @Suppress("DEPRECATION") // getInstance() supports API 29; the new constructor requires API 37.
+    @Suppress("DEPRECATION") // API 29를 지원한다. 새 생성자는 API 37부터 사용할 수 있다.
     private val resolver = DnsResolver.getInstance()
     private val closed = AtomicBoolean(false)
     private val writeLock = Any()
     private val pending = ConcurrentHashMap<Any, CancellationSignal>()
+    @Volatile private var reader: Thread? = null
+    val isHealthy: Boolean get() = !closed.get() && reader?.isAlive == true
     private val callbacks = Executors.newFixedThreadPool(2) { task ->
         Thread(task, "haruguard-dns-reply").apply { isDaemon = true }
     }
@@ -46,7 +48,8 @@ internal class DnsTunnel(
     }
 
     fun start() {
-        Thread({ readPackets() }, "haruguard-dns-tun").apply { isDaemon = true }.start()
+        reader = Thread({ readPackets() }, "haruguard-dns-tun").apply { isDaemon = true }
+        reader!!.start()
     }
 
     private fun readPackets() {
@@ -103,7 +106,7 @@ internal class DnsTunnel(
         val token = Any()
         val cancellation = CancellationSignal()
         pending[token] = cancellation
-        // close() can race with query submission; cancel before allocating work if it won.
+        // 연결 종료와 질의 제출이 경합하면 작업을 만들기 전에 취소한다.
         if (closed.get()) {
             pending.remove(token)
             cancellation.cancel()
@@ -170,7 +173,7 @@ internal class DnsTunnel(
         pending.values.forEach { it.cancel() }
         pending.clear()
         synchronized(writeLock) { descriptor.close() }
-        // Let already queued cancellation callbacks finish; they cannot write to a closed tunnel.
+        // 이미 예약된 취소 콜백은 마저 실행하되 닫힌 터널에 쓸 수는 없다.
         callbacks.shutdown()
         return true
     }

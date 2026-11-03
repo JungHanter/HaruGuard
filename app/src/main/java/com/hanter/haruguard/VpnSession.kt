@@ -2,7 +2,7 @@ package com.hanter.haruguard
 
 import java.io.Closeable
 
-enum class VpnPhase { STOPPED, STARTING, FILTERING, STOPPING, ERROR }
+enum class VpnPhase { STOPPED, STARTING, FILTERING, RECOVERING, STOPPING, ERROR }
 
 data class VpnStatus(
     val phase: VpnPhase = VpnPhase.STOPPED,
@@ -34,6 +34,11 @@ internal class VpnSession(
     }
 
     fun isCurrent(connection: Closeable): Boolean = this.connection === connection
+
+    fun recovering(message: String) {
+        check(!isRunning)
+        update(VpnStatus(phase = VpnPhase.RECOVERING, error = message))
+    }
 
     fun recordBlocked(connection: Closeable) {
         if (isCurrent(connection)) update(status.copy(blockedQueries = status.blockedQueries + 1))

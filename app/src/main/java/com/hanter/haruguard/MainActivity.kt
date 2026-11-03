@@ -89,6 +89,8 @@ class MainActivity : ComponentActivity() {
     private fun startFiltering() {
         try {
             // 관리자가 아니어도 시스템 VPN 연결 승인을 받으면 필터를 시작할 수 있다.
+            VpnPreferences(this).filteringRequested = true
+            VpnRecovery.schedule(this)
             feedback = null
             VpnRuntime.status = VpnStatus(phase = VpnPhase.STARTING)
             startForegroundService(Intent(this, YouTubeVpnService::class.java).setAction(YouTubeVpnService.ACTION_FILTER))
@@ -104,6 +106,8 @@ class MainActivity : ComponentActivity() {
     private fun stopFiltering() {
         feedback = null
         try {
+            VpnPreferences(this).filteringRequested = false
+            VpnRecovery.cancel(this)
             // 시스템에 바인딩된 VPN은 stopService()만으로 onDestroy()가 호출되지 않을 수 있다.
             // 명시적 중지 명령에서 VPN 연결을 먼저 닫도록 요청한다.
             startService(Intent(this, YouTubeVpnService::class.java).setAction(YouTubeVpnService.ACTION_STOP))
@@ -140,13 +144,15 @@ private fun P0Screen(
             ToggleCard(
                 title = stringResource(R.string.youtube_access_title),
                 description = stringResource(R.string.youtube_access_description),
-                checked = vpn.phase != VpnPhase.FILTERING && vpn.phase != VpnPhase.STOPPING,
+                checked = vpn.phase != VpnPhase.FILTERING && vpn.phase != VpnPhase.STOPPING &&
+                    vpn.phase != VpnPhase.RECOVERING,
                 enabled = !busy,
                 onCheckedChange = onYouTubeAccess,
             )
             Text(stringResource(when (vpn.phase) {
                 VpnPhase.STARTING -> R.string.vpn_starting
                 VpnPhase.FILTERING -> R.string.vpn_filtering
+                VpnPhase.RECOVERING -> R.string.vpn_recovering
                 VpnPhase.STOPPING -> R.string.vpn_stopping
                 VpnPhase.ERROR -> R.string.vpn_error
                 VpnPhase.STOPPED -> R.string.vpn_stopped
