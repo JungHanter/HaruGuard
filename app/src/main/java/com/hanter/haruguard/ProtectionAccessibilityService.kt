@@ -9,6 +9,8 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.PixelFormat
 import android.graphics.Rect
+import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
@@ -44,10 +46,14 @@ class ProtectionAccessibilityService : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
     private var packageSurfaces = emptyMap<String, ProtectedScreenPolicy.Surface>()
     private val navigation = BlockNavigation()
-    private var lastNotice = -2_000L
+    private val appSelection = AppSelectionGuard()
     private var notice: Toast? = null
+    private var nativeNoticeVisible = false
+    private var noticeBanner: View? = null
+    private var preparedNoticeBanner: View? = null
     private var nextRecovery = 0L
     private var shield: View? = null
+    private var preparedShield: View? = null
     private var shieldBounds: Rect? = null
     private var shieldConfirmedAt = 0L
     private var launcherTargetPackage: String? = null
@@ -55,11 +61,18 @@ class ProtectionAccessibilityService : AccessibilityService() {
     private var launcherPopupConfirmed = false
     private val windowHints = mutableMapOf<Int, WindowHint>()
     private var receiverRegistered = false
+    private val recheck = Runnable { inspectCurrentWindows() }
+    private val shieldExpiry = Runnable { expireUnconfirmedShield() }
+    private val fallbackNotice = Runnable { runCatching { if (!nativeNoticeVisible) showNoticeBanner() } }
+    private val hideNoticeBanner = Runnable { removeNoticeBanner() }
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == Intent.ACTION_SCREEN_OFF) {
                 ParentAccess.lock()
+                appSelection.clear()
                 removeShield()
+                removeNoticeBanner()
+                handler.removeCallbacks(fallbackNotice)
             } else {
                 nextRecovery = 0
                 inspectCurrentWindows()
@@ -94,7 +107,12 @@ class ProtectionAccessibilityService : AccessibilityService() {
         packageSurfaces = buildPackageSurfaces()
         serviceInfo = serviceInfo.apply {
             packageNames = packageSurfaces.keys.toTypedArray()
+            // 같은 종류의 이벤트가 잠잠해지기를 기다리지 않고 보호 화면 전환을 바로 받는다.
+            // https://developer.android.com/reference/android/accessibilityservice/AccessibilityServiceInfo#notificationTimeout
+            notificationTimeout = 0
         }
+        preparedShield = createShield()
+        preparedNoticeBanner = createNoticeBanner()
         if (!receiverRegistered) {
             ContextCompat.registerReceiver(this, screenReceiver,
                 IntentFilter().apply {
@@ -113,6 +131,20 @@ class ProtectionAccessibilityService : AccessibilityService() {
         try {
             val sourcePackage = event.packageName?.toString().orEmpty()
             val surface = packageSurfaces[sourcePackage]
+            if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED && surface == ProtectedScreenPolicy.Surface.SETTINGS &&
+                shouldProtect() && !ParentAccess.isMaintenanceOpen() && SystemClock.uptimeMillis() - event.eventTime in 0..200) {
+                val source = event.source
+                val labels = try {
+                    if (source?.isPassword == true || source?.isEditable == true) emptyList() else
+                        event.text.map { it.toString() } + listOfNotNull(source?.text?.toString(), source?.contentDescription?.toString())
+                } finally { recycle(source) }
+                val now = SystemClock.elapsedRealtime()
+                if (appSelection.clicked(event.windowId, labels, now)) {
+                    shieldConfirmedAt = now
+                    showShield()
+                    scheduleRecheck()
+                }
+            }
             if (event.eventType == AccessibilityEvent.TYPE_VIEW_LONG_CLICKED &&
                 surface == ProtectedScreenPolicy.Surface.LAUNCHER) {
                 val source = event.source
@@ -164,7 +196,10 @@ class ProtectionAccessibilityService : AccessibilityService() {
 
     private fun inspectWindows(freshHint: WindowHint?) {
         if (!shouldProtect()) {
+            appSelection.clear()
             removeShield()
+            removeNoticeBanner()
+            handler.removeCallbacks(fallbackNotice)
             navigation.clear()
             return
         }
@@ -174,17 +209,22 @@ class ProtectionAccessibilityService : AccessibilityService() {
         val activeWindowId = active?.windowId
         if (ProtectedScreenPolicy.isCriticalForeground(activePackage)) {
             recycle(active)
+            appSelection.clear()
             removeShield()
+            removeNoticeBanner()
+            handler.removeCallbacks(fallbackNotice)
             navigation.clear()
             return
         }
         var protectedBounds: Rect? = null
-        var foundProtected = false
+        var foundTarget: BlockNavigation.Target? = null
         try {
-            if (active != null && isProtected(active)) foundProtected = true
+            if (active != null) foundTarget = protectedTarget(active)
         } finally {
             recycle(active)
         }
+        // 전면 보호 화면이 확인되면 다른 창을 모두 읽기 전에 터치 차단·복귀부터 실행한다.
+        foundTarget?.let { leaveProtectedScreen(it); return }
         val visibleWindows = windows
         val visibleIds = visibleWindows.map { it.id }.toSet()
         windowHints.keys.removeAll { it !in visibleIds && it != activeWindowId }
@@ -194,14 +234,18 @@ class ProtectionAccessibilityService : AccessibilityService() {
                 window.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD) continue
             val root = window.root
             try {
-                if (root != null && isProtected(root, window.title?.toString())) {
-                    foundProtected = true
+                val target = root?.let { protectedTarget(it, window.title?.toString()) }
+                if (target != null) {
+                    foundTarget = target
                     if (activePackage == packageName) {
                         // 부모 PIN은 계속 누를 수 있도록 위험한 반대쪽 창만 가린다.
                         val bounds = Rect().also(window::getBoundsInScreen)
                         if (!bounds.isEmpty) {
                             if (protectedBounds == null) protectedBounds = bounds else protectedBounds.union(bounds)
                         }
+                    } else {
+                        leaveProtectedScreen(target)
+                        return
                     }
                 } else if (root == null && freshHint?.windowId == window.id &&
                     (window.isActive || window.isFocused)) {
@@ -217,33 +261,44 @@ class ProtectionAccessibilityService : AccessibilityService() {
         }
         val hintedVpn = !ParentAccess.isMaintenanceOpen() &&
             freshHint?.let { packageSurfaces[it.packageName] == ProtectedScreenPolicy.Surface.VPN_DIALOG } == true
-        if (!foundProtected && freshHint != null && (hintedBlock != null || hintedVpn) &&
+        if (foundTarget == null && freshHint != null && (hintedBlock != null || hintedVpn) &&
             ProtectedScreenPolicy.canUseMissingRootHint(
                 SystemClock.uptimeMillis() - freshHint.eventUptime,
                 matchingFocusedWindowWithoutRoot || (visibleWindows.isEmpty() && activePackage == null),
                 activePackage != null && activePackage != freshHint.packageName,
             )) {
-            foundProtected = true
+            foundTarget = BlockNavigation.Target(freshHint.windowId, hintedBlock?.area, freshHint.className.hashCode())
             hintedBlock?.let { ProtectionRuntime.lastBlock = it }
         }
-        if (foundProtected) {
+        val target = foundTarget
+        if (target != null) {
+            appSelection.clear()
             shieldConfirmedAt = SystemClock.elapsedRealtime()
             if (activePackage == packageName && protectedBounds != null) {
                 showShield(protectedBounds)
             } else {
-                leaveProtectedScreen()
+                leaveProtectedScreen(target)
             }
         } else {
+            // 화면 전환 중의 빈 트리 때문에 가림막을 내렸다 올리는 틈을 만들지 않는다.
+            // 정상 설정은 길게 가리지 않고, 직전 보호 화면 뒤에는 80ms만 보완한다.
+            val now = SystemClock.elapsedRealtime()
+            if (shield != null && (activePackage == null || packageSurfaces[activePackage] == ProtectedScreenPolicy.Surface.SETTINGS) &&
+                (appSelection.isPending(now) || now - shieldConfirmedAt < 80)) {
+                scheduleRecheck()
+                return
+            }
             removeShield()
             navigation.clear()
         }
     }
 
-    private fun isProtected(root: AccessibilityNodeInfo, windowTitle: String? = null): Boolean {
-        val surface = packageSurfaces[root.packageName?.toString()] ?: return false
+    private fun protectedTarget(root: AccessibilityNodeInfo, windowTitle: String? = null): BlockNavigation.Target? {
+        val surface = packageSurfaces[root.packageName?.toString()] ?: return null
         // 5분 개방에서는 개발자옵션 활성화만 예외적으로 계속 보호한다.
-        if (ParentAccess.isMaintenanceOpen() && surface != ProtectedScreenPolicy.Surface.SETTINGS) return false
-        if (surface == ProtectedScreenPolicy.Surface.VPN_DIALOG) return true
+        if (ParentAccess.isMaintenanceOpen() && surface != ProtectedScreenPolicy.Surface.SETTINGS) return null
+        val target = BlockNavigation.Target(root.windowId)
+        if (surface == ProtectedScreenPolicy.Surface.VPN_DIALOG) return target
         val samples = boundedSamples(root)
         val hint = windowHints[root.windowId]?.takeIf {
             it.packageName == root.packageName?.toString() &&
@@ -251,9 +306,12 @@ class ProtectionAccessibilityService : AccessibilityService() {
         }
         if (surface == ProtectedScreenPolicy.Surface.SETTINGS) {
             val pageClass = root.className?.toString().orEmpty() + " " + hint?.className.orEmpty()
-            val block = settingsBlock(SettingsScreenPolicy.screen(pageClass, samples, windowTitle))
+            val page = SettingsScreenPolicy.screen(pageClass, samples, windowTitle)
+            val block = settingsBlock(page)
+            appSelection.observe(root.windowId, page, SystemClock.elapsedRealtime())
             if (block != null) ProtectionRuntime.lastBlock = block
-            return block != null
+            // 원문 제목은 보관하지 않고 같은 페이지의 중복 이벤트 판별용 숫자만 쓴다.
+            return block?.let { BlockNavigation.Target(root.windowId, it.area, page.headings.ifEmpty { listOf(page.className) }.hashCode()) }
         }
         // 런처 팝업 이벤트는 홈 전체와 같은 창일 수 있으므로 전체 문구를 섞지 않는다.
         val hasWholeSurface = samples.any {
@@ -263,7 +321,7 @@ class ProtectionAccessibilityService : AccessibilityService() {
         val rootClass = root.className?.toString().orEmpty() +
             if (surface == ProtectedScreenPolicy.Surface.LAUNCHER || hasWholeSurface) "" else " " + hint?.className.orEmpty()
         if (ProtectedScreenPolicy.shouldBlock(surface, rootClass,
-                samples.flatMap { it.labels }, samples.mapNotNull { it.viewId })) return true
+                samples.flatMap { it.labels }, samples.mapNotNull { it.viewId })) return target
         val scopes = samples.indices.filter { index ->
             ProtectedScreenPolicy.isScopedContainer(samples[index].className, samples[index].viewId)
         }.take(6)
@@ -278,7 +336,7 @@ class ProtectionAccessibilityService : AccessibilityService() {
                 launcherPopupConfirmed = false
             }
         }
-        return scopes.any { ancestor ->
+        return target.takeIf { scopes.any { ancestor ->
             val scoped = samples.filterIndexed { index, _ ->
                 var parent = index
                 while (parent >= 0 && parent != ancestor) parent = samples[parent].parent
@@ -287,7 +345,7 @@ class ProtectionAccessibilityService : AccessibilityService() {
             ProtectedScreenPolicy.shouldBlock(surface, samples[ancestor].className,
                 scoped.flatMap { it.labels }, scoped.mapNotNull { it.viewId },
                 scopedContent = true, longPressedOurApp = isLauncherTarget)
-        }
+        } }
     }
 
     private fun boundedSamples(root: AccessibilityNodeInfo): List<SettingsScreenPolicy.Node> {
@@ -319,34 +377,125 @@ class ProtectionAccessibilityService : AccessibilityService() {
         return samples
     }
 
-    private fun leaveProtectedScreen() {
+    private fun scheduleRecheck() {
+        handler.removeCallbacks(recheck)
+        handler.postDelayed(recheck, 40)
+    }
+
+    private fun leaveProtectedScreen(target: BlockNavigation.Target) {
         val now = SystemClock.elapsedRealtime()
+        appSelection.clear()
+        shieldConfirmedAt = now
         showShield()
-        if (now - lastNotice >= 2_000) {
-            lastNotice = now
-            notice?.cancel()
-            notice = Toast.makeText(this, R.string.setting_blocked_notice, Toast.LENGTH_SHORT).also { it.show() }
-        }
         // 먼저 이전 설정으로 돌아가 Wi-Fi 등 나머지 메뉴를 계속 사용할 수 있게 한다.
         // 뒤로 이동이 실패하거나 같은 보호 화면이 남았을 때만 홈으로 나간다.
         // https://developer.android.com/reference/android/accessibilityservice/AccessibilityService#performGlobalAction(int)
-        when (navigation.blocked(now)) {
+        when (navigation.blocked(now, target)) {
             BlockNavigation.Action.BACK -> {
                 if (!performGlobalAction(GLOBAL_ACTION_BACK)) performGlobalAction(GLOBAL_ACTION_HOME)
-                handler.postDelayed({ inspectCurrentWindows() }, 250)
-                handler.postDelayed({ inspectCurrentWindows() }, 600)
             }
-            BlockNavigation.Action.HOME -> {
-                performGlobalAction(GLOBAL_ACTION_HOME)
-                handler.postDelayed({ inspectCurrentWindows() }, 250)
-            }
+            BlockNavigation.Action.HOME -> performGlobalAction(GLOBAL_ACTION_HOME)
             BlockNavigation.Action.WAIT -> Unit
         }
+        scheduleRecheck()
     }
 
     private fun showShield(bounds: Rect? = null) {
+        handler.removeCallbacks(shieldExpiry)
+        handler.postDelayed(shieldExpiry, 350)
         if (shield != null && shieldBounds == bounds) return
+        if (shield != null) {
+            try {
+                getSystemService(WindowManager::class.java).updateViewLayout(shield, shieldLayout(bounds))
+                shieldBounds = bounds?.let(::Rect)
+                return
+            } catch (_: RuntimeException) { removeShield() }
+        }
         removeShield()
+        // 모든 가림막 진입 경로(분할 화면 포함)가 같은 Toast 요청을 사용한다.
+        // 같은 객체를 재사용하고 표시 중인 알림을 취소하지 않는다. OS의 표시 제한은 남는다.
+        // https://developer.android.com/reference/android/widget/Toast#show()
+        val view = preparedShield ?: createShield().also { preparedShield = it }
+        try {
+            getSystemService(WindowManager::class.java).addView(view, shieldLayout(bounds))
+            shield = view
+            shieldBounds = bounds?.let(::Rect)
+            handler.postDelayed(shieldExpiry, 350)
+        } catch (_: RuntimeException) {
+            // 가림막을 못 띄워도 Toast 요청과 BACK/HOME은 계속 시도한다.
+        }
+        showBlockedNotice()
+    }
+
+    private fun showBlockedNotice() {
+        handler.removeCallbacks(fallbackNotice)
+        if (Build.VERSION.SDK_INT >= 30) {
+            runCatching {
+                val toast = notice ?: Toast.makeText(this, R.string.setting_blocked_notice, Toast.LENGTH_SHORT).apply {
+                    addCallback(object : Toast.Callback() {
+                        override fun onToastShown() {
+                            nativeNoticeVisible = true
+                            handler.removeCallbacks(fallbackNotice)
+                            removeNoticeBanner()
+                        }
+                        override fun onToastHidden() { nativeNoticeVisible = false }
+                    })
+                }.also { notice = it }
+                toast.show()
+            }
+            // OS가 Toast를 제한하거나 표시를 늦추면 입력을 막지 않는 짧은 안내로 보완한다.
+            handler.postDelayed(fallbackNotice, 100)
+        } else runCatching { showNoticeBanner() }
+    }
+
+    private fun createNoticeBanner(): View = TextView(this).apply {
+        text = getString(R.string.setting_blocked_notice)
+        textSize = 14f
+        maxLines = 2
+        maxWidth = (resources.displayMetrics.widthPixels * 0.9f).toInt()
+        setTextColor(android.graphics.Color.WHITE)
+        val inset = (12 * resources.displayMetrics.density).toInt()
+        setPadding(inset, inset, inset, inset)
+        background = GradientDrawable().apply {
+            setColor(android.graphics.Color.rgb(40, 40, 40))
+            cornerRadius = 12 * resources.displayMetrics.density
+        }
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+    }
+
+    private fun showNoticeBanner() {
+        if (!shouldProtect()) return
+        val active = rootInActiveWindow
+        try {
+            if (ProtectedScreenPolicy.isCriticalForeground(active?.packageName?.toString())) return
+        } finally { recycle(active) }
+        if (noticeBanner == null) {
+            val view = preparedNoticeBanner ?: createNoticeBanner().also { preparedNoticeBanner = it }
+            try {
+                getSystemService(WindowManager::class.java).addView(view, WindowManager.LayoutParams(
+                    WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
+                    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+                    PixelFormat.TRANSLUCENT,
+                ).apply {
+                    gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+                    y = (64 * resources.displayMetrics.density).toInt()
+                })
+                noticeBanner = view
+            } catch (_: RuntimeException) { return }
+        }
+        handler.removeCallbacks(hideNoticeBanner)
+        handler.postDelayed(hideNoticeBanner, 800)
+    }
+
+    private fun removeNoticeBanner() {
+        handler.removeCallbacks(hideNoticeBanner)
+        noticeBanner?.let { runCatching { getSystemService(WindowManager::class.java).removeViewImmediate(it) } }
+        noticeBanner = null
+    }
+
+    private fun createShield(): View {
         val view = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -354,14 +503,14 @@ class ProtectionAccessibilityService : AccessibilityService() {
             isClickable = true
             addView(TextView(this@ProtectionAccessibilityService).apply {
                 text = getString(R.string.setting_blocked_notice)
-                textSize = 22f
+                textSize = 16f
                 gravity = Gravity.CENTER
                 setTextColor(android.graphics.Color.WHITE)
             })
             // 앱이 열리지 않는 기기에서도 부모/홈으로 이동할 수 있는 실제 조작을 남긴다.
             addView(Button(this@ProtectionAccessibilityService).apply {
                 text = "부모 인증 열기"
-                setOnClickListener { launchParent(); handler.postDelayed({ inspectCurrentWindows() }, 250) }
+                setOnClickListener { launchParent(); scheduleRecheck() }
             })
             addView(Button(this@ProtectionAccessibilityService).apply {
                 text = "홈으로"
@@ -370,8 +519,10 @@ class ProtectionAccessibilityService : AccessibilityService() {
                 }
             })
         }
-        try {
-            getSystemService(WindowManager::class.java).addView(view, WindowManager.LayoutParams(
+        return view
+    }
+
+    private fun shieldLayout(bounds: Rect?): WindowManager.LayoutParams = WindowManager.LayoutParams(
                 bounds?.width() ?: WindowManager.LayoutParams.MATCH_PARENT,
                 bounds?.height() ?: WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
@@ -382,14 +533,7 @@ class ProtectionAccessibilityService : AccessibilityService() {
                 gravity = Gravity.TOP or Gravity.START
                 x = bounds?.left ?: 0
                 y = bounds?.top ?: 0
-            })
-            shield = view
-            shieldBounds = bounds?.let(::Rect)
-            handler.postDelayed({ expireUnconfirmedShield() }, 2_000)
-        } catch (_: RuntimeException) {
-            // 오버레이가 지원되지 않아도 홈과 부모 화면으로 이동은 계속 시도한다.
-        }
-    }
+            }
 
     private fun launchParent() {
         try {
@@ -402,12 +546,17 @@ class ProtectionAccessibilityService : AccessibilityService() {
 
     private fun expireUnconfirmedShield() {
         // 확인할 수 없는 화면을 무기한 덮지 않는다. 다음 정상 이벤트에서 필요하면 다시 보호한다.
-        if (SystemClock.elapsedRealtime() - shieldConfirmedAt >= 2_000) removeShield()
+        val remaining = 350 - (SystemClock.elapsedRealtime() - shieldConfirmedAt)
+        if (remaining <= 0) removeShield() else {
+            handler.removeCallbacks(shieldExpiry)
+            handler.postDelayed(shieldExpiry, remaining)
+        }
     }
 
     private fun removeShield() {
+        handler.removeCallbacks(shieldExpiry)
         shield?.let {
-            try { getSystemService(WindowManager::class.java).removeView(it) } catch (_: RuntimeException) {
+            try { getSystemService(WindowManager::class.java).removeViewImmediate(it) } catch (_: RuntimeException) {
                 // 시스템이 이미 창을 회수했으면 참조만 정리한다.
             }
         }
@@ -450,8 +599,12 @@ class ProtectionAccessibilityService : AccessibilityService() {
         instance.clear()
         handler.removeCallbacksAndMessages(null)
         navigation.clear()
+        appSelection.clear()
         notice?.cancel()
         removeShield()
+        preparedShield = null
+        removeNoticeBanner()
+        preparedNoticeBanner = null
         windowHints.clear()
         if (receiverRegistered) {
             unregisterReceiver(screenReceiver)
