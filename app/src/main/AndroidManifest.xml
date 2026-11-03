@@ -9,9 +9,18 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.HIDE_OVERLAY_WINDOWS" />
 
     <queries>
         <package android:name="com.google.android.youtube" />
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.HOME" />
+        </intent>
+        <intent>
+            <action android:name="android.settings.SETTINGS" />
+        </intent>
     </queries>
 
     <application
@@ -24,6 +33,28 @@
         android:supportsRtl="true"
         android:testOnly="true"
         android:theme="@style/Theme.HaruGuard">
+        <!-- 부모가 직접 활성화하는 최소 일반 관리자. DO/PO 정책은 사용하지 않는다. -->
+        <receiver
+            android:name=".HaruGuardAdminReceiver"
+            android:exported="true"
+            android:label="@string/admin_label"
+            android:description="@string/admin_description"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data android:name="android.app.device_admin" android:resource="@xml/haruguard_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
+        <service
+            android:name=".ProtectionAccessibilityService"
+            android:exported="true"
+            android:label="@string/accessibility_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/protection_accessibility_service" />
+        </service>
         <!-- 연결 승인을 받은 VPN 앱은 관리자 없이 systemExempted를 사용할 수 있다.
              서비스는 startForeground 전에 VPN 승인을 확인한다. Lint는 알람 권한 조건만 검사한다.
              https://developer.android.com/develop/background-work/services/fgs/service-types#system-exempted -->
@@ -51,6 +82,7 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
         <receiver
@@ -62,6 +94,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:label="@string/app_name"
             android:theme="@style/Theme.HaruGuard"
             android:windowSoftInputMode="adjustResize">

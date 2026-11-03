@@ -15,11 +15,13 @@ internal object VpnRecovery {
     const val ACTION_CHECK = "com.hanter.haruguard.CHECK_VPN"
     const val ACTION_ADB_RECOVER = "com.hanter.haruguard.ADB_RECOVER_VPN"
     private const val HEARTBEAT_MS = 30_000L
+    private val deadline = RecoveryAlarmDeadline()
 
     fun schedule(context: Context, delayMs: Long = HEARTBEAT_MS) {
+        if (!VpnPreferences(context).filteringRequested) return
+        val at = deadline.reserve(SystemClock.elapsedRealtime(), delayMs) ?: return
         val alarm = context.getSystemService(AlarmManager::class.java)
         val operation = pendingIntent(context)
-        val at = SystemClock.elapsedRealtime() + delayMs
         // 정확한 알람은 허용됐을 때만 사용하고, 권한이 없으면 지연 가능한 알람을 사용한다.
         // https://developer.android.com/develop/background-work/services/alarms/schedule
         try {
@@ -28,13 +30,24 @@ internal object VpnRecovery {
             } else {
                 alarm.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, operation)
             }
-        } catch (_: SecurityException) {
-            alarm.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, operation)
+        } catch (error: Exception) {
+            try {
+                if (error !is SecurityException) throw error
+                alarm.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, operation)
+            } catch (fallbackError: Exception) {
+                deadline.clear()
+                throw fallbackError
+            }
         }
     }
 
     fun cancel(context: Context) {
+        deadline.clear()
         context.getSystemService(AlarmManager::class.java).cancel(pendingIntent(context))
+    }
+
+    fun alarmDelivered() {
+        deadline.clear()
     }
 
     fun request(context: Context): String {
@@ -49,16 +62,21 @@ internal object VpnRecovery {
                     schedule(context)
                     return "LOCKED"
                 }
-                preferences.filteringRequested = false
+                // 승인 상실은 부모가 OFF를 선택한 것과 다르다. ON 의도는 보존하지만
+                // 새 시스템 동의 없이 VPN을 재시작하거나 다른 VPN의 연결을 빼앗지 않는다.
                 cancel(context)
                 VpnRuntime.status = VpnStatus(VpnPhase.ERROR, error = context.getString(R.string.vpn_permission_missing))
                 "NEEDS_CONSENT"
             } else {
                 schedule(context)
-                context.startForegroundService(
-                    Intent(context, YouTubeVpnService::class.java).setAction(YouTubeVpnService.ACTION_RECOVER),
-                )
-                "REQUESTED"
+                if (YouTubeVpnService.checkRunningService()) {
+                    "RUNNING"
+                } else {
+                    context.startForegroundService(
+                        Intent(context, YouTubeVpnService::class.java).setAction(YouTubeVpnService.ACTION_RECOVER),
+                    )
+                    "REQUESTED"
+                }
             }
         } catch (error: Exception) {
             if (VpnRuntime.status.phase != VpnPhase.FILTERING &&
@@ -81,8 +99,13 @@ internal object VpnRecovery {
 /** 부팅·앱 업데이트·자체 알람에만 반응한다. 저장된 ON 선택이 없으면 실행하지 않는다. */
 class VpnRecoveryReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == VpnRecovery.ACTION_CHECK ||
+            intent.action == AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED) {
+            VpnRecovery.alarmDelivered()
+        }
         if (intent.action in setOf(Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_LOCKED_BOOT_COMPLETED,
-                Intent.ACTION_MY_PACKAGE_REPLACED, VpnRecovery.ACTION_CHECK)) {
+                Intent.ACTION_MY_PACKAGE_REPLACED, VpnRecovery.ACTION_CHECK,
+                AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED)) {
             VpnRecovery.request(context)
         }
     }

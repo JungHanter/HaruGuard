@@ -11,7 +11,8 @@ internal class VpnPreferences(context: Context) {
         // 잠금 해제 후 기존 선택을 한 번 옮긴다. 재부팅 직후에는 이 비민감 값만 읽는다.
         if (!existing.getBoolean("migration_complete", false) &&
             context.getSystemService(UserManager::class.java).isUserUnlocked) {
-            storage.moveSharedPreferencesFrom(context, NAME)
+            // 잠금 해제 전에 새 저장소에 기록한 선택이 있다면 오래된 CE 값으로 덮어쓰지 않는다.
+            if (!existing.contains("filtering_requested")) storage.moveSharedPreferencesFrom(context, NAME)
             storage.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
                 .putBoolean("migration_complete", true).commit()
         }
