@@ -104,8 +104,12 @@ private fun ParentControls(
     if (state.filteringRequested && vpn.phase == VpnPhase.ERROR) {
         Button(onClick = { onVpn(true) }, enabled = !busy) { Text("VPN 승인·연결 다시 시도") }
     }
-    ToggleCard("설정 화면 보호", "설정 앱 전체와 기기 관리·접근성·VPN 변경 경로를 부모 인증으로 보호합니다. 삭제 확인 화면도 닫습니다.",
+    ToggleCard("설정 화면 보호", "HaruGuard의 앱 관리·실행 권한과 관리자·접근성·VPN 화면을 보호합니다. Wi-Fi·밝기·소리 등 일반 설정은 사용할 수 있습니다.",
         state.protection, !busy, onProtection)
+    Text("앱을 구분할 수 없는 상세 화면이나 목록에서 바로 권한을 바꾸는 경우에는 해당 화면·목록을 보호합니다.", style = MaterialTheme.typography.bodySmall)
+    ProtectionRuntime.lastBlock?.let {
+        Text("마지막 차단: ${it.area.label} · ${it.scope.label}", style = MaterialTheme.typography.bodySmall)
+    }
     Text("처음에는 아래 항목을 설정한 뒤 보호를 켜세요. 각 설정 버튼은 5분간 설정 접근을 허용합니다.")
     StatusButton("1. 일반 기기 관리자", if (state.admin) "활성화됨" else "설정 필요", busy) { onSettings(ParentSetting.ADMIN) }
     StatusButton("2. 접근성 설정 보호", when {
@@ -121,7 +125,7 @@ private fun ParentControls(
     if (lockdown == true) Text("VPN 외 연결 차단이 켜져 있습니다. 제외한 YouTube 앱 통신도 막힐 수 있습니다.", color = MaterialTheme.colorScheme.error)
     StatusButton("4. 배터리 최적화 예외", if (state.batteryExempt) "허용됨" else "설정 필요", busy) { onSettings(ParentSetting.BATTERY) }
     StatusButton("5. 정확한 알람", if (state.exactAlarm) "허용됨" else "미허용 · 복구가 늦어질 수 있음", busy) { onSettings(ParentSetting.EXACT_ALARM) }
-    StatusButton("6. 상태 알림", if (state.notifications) "허용됨" else "알림 허용 필요", busy) { onSettings(ParentSetting.NOTIFICATIONS) }
+    StatusButton("6. 상태 알림 (선택)", if (state.notifications) "허용됨" else "꺼짐 · VPN 실행 가능", busy) { onSettings(ParentSetting.NOTIFICATIONS) }
     Text("삼성 절전 목록·접근성 서비스 종료·OS 제한에 따른 실제 유지 여부는 기기에서 시험해야 합니다.", style = MaterialTheme.typography.bodySmall)
     Button(onClick = { onSettings(ParentSetting.ALL) }, enabled = !busy) { Text("설정을 5분간 열기") }
     OutlinedButton(onClick = onLock) { Text("지금 잠그기") }

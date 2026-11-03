@@ -6,8 +6,8 @@ import org.junit.Test
 import com.hanter.haruguard.ProtectedScreenPolicy.Surface
 
 class ProtectedScreenPolicyTest {
-    @Test fun settingsAndVpnConsentDoNotDependOnLocaleOrVisibleText() {
-        assertTrue(ProtectedScreenPolicy.shouldBlock(Surface.SETTINGS, "", emptyList()))
+    @Test fun settingsNeedsPageClassificationWhileVpnConsentIsProtected() {
+        assertFalse(ProtectedScreenPolicy.shouldBlock(Surface.SETTINGS, "", emptyList()))
         assertTrue(ProtectedScreenPolicy.shouldBlock(Surface.VPN_DIALOG, "", emptyList()))
     }
 

@@ -6,7 +6,8 @@
     <string name="admin_description">삭제 전에 관리자 해제를 요구하고 강제 중지 경로를 제한하는 보조 기능입니다. 초기화·암호·카메라 정책은 사용하지 않습니다.</string>
     <string name="admin_disable_warning">HaruGuard 부모 화면에서 먼저 보호를 해제하세요. 관리자를 끄면 앱 삭제·중지 보호가 약해집니다.</string>
     <string name="accessibility_label">HaruGuard 설정 보호</string>
-    <string name="accessibility_description">부모가 보호를 켜면 설정·VPN 변경·앱 삭제 및 중지 화면에서 나가 부모 인증 화면을 엽니다. 설정, 시스템 대화상자와 홈 메뉴의 내용만 보호 판정에 사용하며 저장하거나 전송하지 않습니다. 부모는 HaruGuard PIN으로 설정을 5분간 열거나 보호를 해제할 수 있습니다. 접근성 단축키는 설정하지 마세요.</string>
+    <string name="accessibility_description">부모가 보호를 켜면 HaruGuard의 앱 관리·실행 권한과 관리자·접근성·VPN 화면에서 안내를 띄우고 이전 화면으로 돌아갑니다. Wi-Fi·밝기·소리 같은 일반 설정은 허용합니다. 앱을 구분할 수 없는 상세 화면이나 목록에서 바로 변경하는 경우에는 해당 화면·목록을 보호합니다. 설정, 시스템 대화상자와 홈 메뉴의 내용만 판정에 사용하며 저장하거나 전송하지 않습니다. 부모는 PIN으로 보호 설정을 5분간 열거나 보호를 해제할 수 있습니다. 접근성 단축키는 설정하지 마세요.</string>
+    <string name="setting_blocked_notice">HaruGuard에 의해 설정이 차단되었습니다.</string>
     <string name="parent_required">부모 인증이 필요합니다</string>
     <string name="youtube_access_title">모든 앱의 YouTube 접근 허용</string>
     <string name="youtube_access_description">ON: HaruGuard VPN 필터 중지\nOFF: 공식 YouTube 앱만 제외하고 다른 앱의 YouTube DNS 요청 차단</string>

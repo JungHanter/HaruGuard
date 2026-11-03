@@ -24,9 +24,18 @@ import android.view.accessibility.AccessibilityWindowInfo
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import java.lang.ref.WeakReference
 import java.util.ArrayDeque
+
+/** 화면 내용 없이 보호 분류만 부모 화면에 표시한다. 프로세스 종료 시 지워진다. */
+internal object ProtectionRuntime {
+    var lastBlock by mutableStateOf<SettingsScreenPolicy.Block?>(null)
+}
 
 /** 부모가 직접 허용한 설정 화면 보호. OS 정책이 아니므로 완료된 강제 중지를 취소할 수 없다.
  * https://developer.android.com/reference/android/accessibilityservice/AccessibilityService
@@ -34,7 +43,9 @@ import java.util.ArrayDeque
 class ProtectionAccessibilityService : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
     private var packageSurfaces = emptyMap<String, ProtectedScreenPolicy.Surface>()
-    private var lastRedirect = -2_000L
+    private val navigation = BlockNavigation()
+    private var lastNotice = -2_000L
+    private var notice: Toast? = null
     private var nextRecovery = 0L
     private var shield: View? = null
     private var shieldBounds: Rect? = null
@@ -145,6 +156,7 @@ class ProtectionAccessibilityService : AccessibilityService() {
     private fun inspectWindows(freshHint: WindowHint?) {
         if (!shouldProtect()) {
             removeShield()
+            navigation.clear()
             return
         }
         // 앱 화면이 전면이어도 분할 화면 반대편에 설정이 남아 있으면 보호한다.
@@ -154,6 +166,7 @@ class ProtectionAccessibilityService : AccessibilityService() {
         if (ProtectedScreenPolicy.isCriticalForeground(activePackage)) {
             recycle(active)
             removeShield()
+            navigation.clear()
             return
         }
         var protectedBounds: Rect? = null
@@ -172,7 +185,7 @@ class ProtectionAccessibilityService : AccessibilityService() {
                 window.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD) continue
             val root = window.root
             try {
-                if (root != null && isProtected(root)) {
+                if (root != null && isProtected(root, window.title?.toString())) {
                     foundProtected = true
                     if (activePackage == packageName) {
                         // 부모 PIN은 계속 누를 수 있도록 위험한 반대쪽 창만 가린다.
@@ -187,36 +200,48 @@ class ProtectionAccessibilityService : AccessibilityService() {
                 }
             } finally { recycle(root) }
         }
-        if (!foundProtected && freshHint != null &&
-            packageSurfaces[freshHint.packageName] in setOf(ProtectedScreenPolicy.Surface.SETTINGS,
-                ProtectedScreenPolicy.Surface.VPN_DIALOG) &&
+        // 트리를 못 읽었다고 Settings 전체로 보호 범위를 확대하지 않는다.
+        // 실제 VPN·관리자·접근성 등의 클래스가 확인될 때만 제한적으로 보완한다.
+        val hintedBlock = freshHint?.let {
+            if (packageSurfaces[it.packageName] == ProtectedScreenPolicy.Surface.SETTINGS)
+                SettingsScreenPolicy.block(SettingsScreenPolicy.Screen(className = it.className)) else null
+        }
+        val hintedVpn = freshHint?.let { packageSurfaces[it.packageName] == ProtectedScreenPolicy.Surface.VPN_DIALOG } == true
+        if (!foundProtected && freshHint != null && (hintedBlock != null || hintedVpn) &&
             ProtectedScreenPolicy.canUseMissingRootHint(
                 SystemClock.uptimeMillis() - freshHint.eventUptime,
                 matchingFocusedWindowWithoutRoot || (visibleWindows.isEmpty() && activePackage == null),
                 activePackage != null && activePackage != freshHint.packageName,
             )) {
             foundProtected = true
+            hintedBlock?.let { ProtectionRuntime.lastBlock = it }
         }
         if (foundProtected) {
             shieldConfirmedAt = SystemClock.elapsedRealtime()
             if (activePackage == packageName && protectedBounds != null) {
                 showShield(protectedBounds)
             } else {
-                redirectToParent()
+                leaveProtectedScreen()
             }
         } else {
             removeShield()
+            navigation.clear()
         }
     }
 
-    private fun isProtected(root: AccessibilityNodeInfo): Boolean {
+    private fun isProtected(root: AccessibilityNodeInfo, windowTitle: String? = null): Boolean {
         val surface = packageSurfaces[root.packageName?.toString()] ?: return false
-        if (surface == ProtectedScreenPolicy.Surface.SETTINGS ||
-            surface == ProtectedScreenPolicy.Surface.VPN_DIALOG) return true
+        if (surface == ProtectedScreenPolicy.Surface.VPN_DIALOG) return true
         val samples = boundedSamples(root)
         val hint = windowHints[root.windowId]?.takeIf {
             it.packageName == root.packageName?.toString() &&
                 SystemClock.uptimeMillis() - it.eventUptime in 0..1_000
+        }
+        if (surface == ProtectedScreenPolicy.Surface.SETTINGS) {
+            val pageClass = root.className?.toString().orEmpty() + " " + hint?.className.orEmpty()
+            val block = SettingsScreenPolicy.block(SettingsScreenPolicy.screen(pageClass, samples, windowTitle))
+            if (block != null) ProtectionRuntime.lastBlock = block
+            return block != null
         }
         // 런처 팝업 이벤트는 홈 전체와 같은 창일 수 있으므로 전체 문구를 섞지 않는다.
         val hasWholeSurface = samples.any {
@@ -253,8 +278,8 @@ class ProtectionAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun boundedSamples(root: AccessibilityNodeInfo): List<NodeSample> {
-        val samples = ArrayList<NodeSample>()
+    private fun boundedSamples(root: AccessibilityNodeInfo): List<SettingsScreenPolicy.Node> {
+        val samples = ArrayList<SettingsScreenPolicy.Node>()
         val pending = ArrayDeque<Pair<AccessibilityNodeInfo, Int>>()
         pending.add(root to -1)
         try {
@@ -262,9 +287,11 @@ class ProtectionAccessibilityService : AccessibilityService() {
                 val (node, parent) = pending.removeFirst()
                 try {
                     val index = samples.size
-                    val labels = if (node.isPassword) emptyList() else listOfNotNull(
+                    val labels = if (node.isPassword || node.isEditable) emptyList() else listOfNotNull(
                         node.text?.take(180)?.toString(), node.contentDescription?.take(180)?.toString())
-                    samples.add(NodeSample(parent, labels, node.viewIdResourceName, node.className?.toString().orEmpty()))
+                    samples.add(SettingsScreenPolicy.Node(parent, labels, node.viewIdResourceName, node.className?.toString().orEmpty(),
+                        heading = node.isHeading, collection = node.collectionInfo != null,
+                        checkable = node.isCheckable, paneTitle = node.paneTitle?.toString(), editable = node.isEditable))
                     for (child in 0 until minOf(node.childCount, 30)) {
                         if (pending.size + samples.size >= 120) break
                         node.getChild(child)?.let { pending.add(it to index) }
@@ -280,15 +307,29 @@ class ProtectionAccessibilityService : AccessibilityService() {
         return samples
     }
 
-    private fun redirectToParent() {
+    private fun leaveProtectedScreen() {
         val now = SystemClock.elapsedRealtime()
         showShield()
-        if (now - lastRedirect < 1_500) return
-        lastRedirect = now
-        // 자동으로 시스템 버튼을 누르거나 동의를 대신하지 않는다. 위험 화면에서만 벗어난다.
-        performGlobalAction(GLOBAL_ACTION_HOME)
-        launchParent()
-        handler.postDelayed({ inspectCurrentWindows() }, 250)
+        if (now - lastNotice >= 2_000) {
+            lastNotice = now
+            notice?.cancel()
+            notice = Toast.makeText(this, R.string.setting_blocked_notice, Toast.LENGTH_SHORT).also { it.show() }
+        }
+        // 먼저 이전 설정으로 돌아가 Wi-Fi 등 나머지 메뉴를 계속 사용할 수 있게 한다.
+        // 뒤로 이동이 실패하거나 같은 보호 화면이 남았을 때만 홈으로 나간다.
+        // https://developer.android.com/reference/android/accessibilityservice/AccessibilityService#performGlobalAction(int)
+        when (navigation.blocked(now)) {
+            BlockNavigation.Action.BACK -> {
+                if (!performGlobalAction(GLOBAL_ACTION_BACK)) performGlobalAction(GLOBAL_ACTION_HOME)
+                handler.postDelayed({ inspectCurrentWindows() }, 250)
+                handler.postDelayed({ inspectCurrentWindows() }, 600)
+            }
+            BlockNavigation.Action.HOME -> {
+                performGlobalAction(GLOBAL_ACTION_HOME)
+                handler.postDelayed({ inspectCurrentWindows() }, 250)
+            }
+            BlockNavigation.Action.WAIT -> Unit
+        }
     }
 
     private fun showShield(bounds: Rect? = null) {
@@ -300,7 +341,7 @@ class ProtectionAccessibilityService : AccessibilityService() {
             setBackgroundColor(android.graphics.Color.rgb(24, 36, 48))
             isClickable = true
             addView(TextView(this@ProtectionAccessibilityService).apply {
-                text = getString(R.string.parent_required)
+                text = getString(R.string.setting_blocked_notice)
                 textSize = 22f
                 gravity = Gravity.CENTER
                 setTextColor(android.graphics.Color.WHITE)
@@ -396,6 +437,8 @@ class ProtectionAccessibilityService : AccessibilityService() {
         connected = false
         instance.clear()
         handler.removeCallbacksAndMessages(null)
+        navigation.clear()
+        notice?.cancel()
         removeShield()
         windowHints.clear()
         if (receiverRegistered) {
@@ -408,7 +451,6 @@ class ProtectionAccessibilityService : AccessibilityService() {
     private fun recycle(node: AccessibilityNodeInfo?) { node?.recycle() }
 
     private data class WindowHint(val packageName: String, val windowId: Int, val className: String, val eventUptime: Long)
-    private data class NodeSample(val parent: Int, val labels: List<String>, val viewId: String?, val className: String)
 
     companion object {
         @Volatile var connected: Boolean = false

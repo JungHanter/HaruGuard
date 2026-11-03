@@ -14,7 +14,9 @@ internal object ProtectedScreenPolicy {
         scopedContent: Boolean = false,
         longPressedOurApp: Boolean = false,
     ): Boolean {
-        if (surface == Surface.SETTINGS || surface == Surface.VPN_DIALOG) return true
+        // 설정 앱은 별도의 페이지·대상 앱 판정이 필요하다. 패키지 전체를 차단하지 않는다.
+        if (surface == Surface.SETTINGS) return false
+        if (surface == Surface.VPN_DIALOG) return true
         if (surface == Surface.OTHER) return false
         val name = className.lowercase(Locale.ROOT)
         val values = labels.map { it.trim().lowercase(Locale.ROOT) }
