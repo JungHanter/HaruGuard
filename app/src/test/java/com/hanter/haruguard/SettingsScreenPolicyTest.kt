@@ -30,6 +30,94 @@ class SettingsScreenPolicyTest {
         }
     }
 
+    @Test fun resetOverviewAndDirectResetConfirmationAreProtected() {
+        for (title in listOf("Reset options", "초기화", "Reset mobile network settings", "Reset app preferences",
+                "접근성 설정 초기화", "Reset Wi-Fi and Bluetooth settings", "Erase all data (factory reset)", "Reset app preferences?")) {
+            assertEquals(Block(Area.RESET, Scope.CATEGORY), SettingsScreenPolicy.block(Screen(headings = listOf(title))))
+        }
+        assertEquals(Block(Area.RESET, Scope.CATEGORY), SettingsScreenPolicy.block(Screen(className = "ResetNetworkConfirm")))
+        assertEquals(Block(Area.RESET, Scope.CATEGORY), SettingsScreenPolicy.block(Screen(className = "Settings\$MasterClearActivity")))
+        assertEquals(Block(Area.RESET, Scope.CATEGORY), SettingsScreenPolicy.block(Screen(className = "ResetAccessibilitySettings")))
+    }
+
+    @Test fun resetMenuRowsDoNotBlockSystemOrGeneralManagementOverview() {
+        for (title in listOf("Settings", "System", "General management", "일반", "Apps")) {
+            assertNull(SettingsScreenPolicy.block(Screen(headings = listOf(title),
+                labels = listOf("Reset", "초기화", "Reset app preferences"), list = true)))
+        }
+        assertNull(SettingsScreenPolicy.block(Screen("ResetNetworkConfirm", headings = listOf("Network & internet"))))
+    }
+
+    @Test fun resetSearchQueryAndResultDoNotBlockUntilTheResultIsOpened() {
+        val nodes = listOf(
+            Node(-1, emptyList(), "com.android.settings:id/toolbar", "Toolbar"),
+            Node(0, listOf("Reset"), "android:id/search_src_text", "EditText", editable = true),
+            Node(-1, emptyList(), "android:id/list", "RecyclerView", collection = true),
+            Node(2, listOf("Reset network settings"), "android:id/title", "TextView"),
+        )
+        assertNull(SettingsScreenPolicy.block(SettingsScreenPolicy.screen("SearchActivity", nodes)))
+        assertEquals(Block(Area.RESET, Scope.CATEGORY), SettingsScreenPolicy.block(
+            SettingsScreenPolicy.screen("FrameLayout", emptyList(), "Reset network settings")))
+    }
+
+    @Test fun samsungBuildNumberPageIsProtectedOnlyWhileDeveloperOptionsAreOff() {
+        val software = Screen(headings = listOf("Software information"), labels = listOf("Build number"))
+        assertEquals(Block(Area.DEVELOPER, Scope.CATEGORY), SettingsScreenPolicy.block(software))
+        assertNull(SettingsScreenPolicy.block(software, developerOptionsEnabled = true))
+        assertEquals(Block(Area.DEVELOPER, Scope.CATEGORY), SettingsScreenPolicy.block(
+            Screen(className = "com.samsung.android.settings.deviceinfo.SoftwareInfoSettings")))
+    }
+
+    @Test fun aboutPageOnlyFallsBackToProtectionWhenItContainsBuildNumber() {
+        val about = Screen(headings = listOf("About tablet"), labels = listOf("Software information", "Model"))
+        assertNull(SettingsScreenPolicy.block(about))
+        assertEquals(Block(Area.DEVELOPER, Scope.CATEGORY), SettingsScreenPolicy.block(
+            about.copy(labels = listOf("Build number", "Model"))))
+        assertNull(SettingsScreenPolicy.block(about.copy(labels = listOf("Build number")), developerOptionsEnabled = true))
+        assertEquals(Block(Area.DEVELOPER, Scope.CATEGORY), SettingsScreenPolicy.block(
+            Screen(headings = listOf("휴대전화 정보"), labels = listOf("빌드 번호"))))
+        assertEquals(Block(Area.DEVELOPER, Scope.CATEGORY), SettingsScreenPolicy.block(
+            Screen(headings = listOf("About emulated device"), labels = listOf("Build number"))))
+    }
+
+    @Test fun aospBuildNumberRowInAboutPreferenceListTriggersProtection() {
+        val nodes = listOf(
+            Node(-1, emptyList(), "com.android.settings:id/toolbar", "Toolbar"),
+            Node(0, listOf("About phone"), "android:id/title", "TextView"),
+            Node(-1, emptyList(), "android:id/list", "RecyclerView", collection = true),
+            Node(2, listOf("Build number"), "android:id/title", "TextView"),
+        )
+        assertEquals(Block(Area.DEVELOPER, Scope.CATEGORY), SettingsScreenPolicy.block(
+            SettingsScreenPolicy.screen("SubSettings", nodes)))
+    }
+
+    @Test fun existingDeveloperMenuIsAllowedUntilItIsTurnedOff() {
+        val developer = Screen(className = "DevelopmentSettingsDashboardFragment", headings = listOf("Developer options"))
+        assertNull(SettingsScreenPolicy.block(developer, developerOptionsEnabled = true))
+        assertEquals(Block(Area.DEVELOPER, Scope.CATEGORY), SettingsScreenPolicy.block(developer, developerOptionsEnabled = false))
+    }
+
+    @Test fun maintenanceAllowsNormalProtectedPagesButNeverDeveloperActivation() {
+        assertNull(SettingsScreenPolicy.block(Screen(headings = listOf("Reset")), maintenanceOpen = true))
+        assertNull(SettingsScreenPolicy.block(Screen(headings = listOf("VPN")), maintenanceOpen = true))
+        assertNull(SettingsScreenPolicy.block(Screen(headings = listOf("App info"), appLabels = listOf("HaruGuard")), maintenanceOpen = true))
+        assertEquals(Block(Area.DEVELOPER, Scope.CATEGORY), SettingsScreenPolicy.block(
+            Screen(headings = listOf("Software information")), maintenanceOpen = true))
+        assertNull(SettingsScreenPolicy.block(Screen("SoftwareInfoSettings", headings = listOf("Reset")), maintenanceOpen = true))
+        assertEquals(Block(Area.DEVELOPER, Scope.CATEGORY), SettingsScreenPolicy.block(
+            Screen("ResetNetworkConfirm", headings = listOf("Software information")), maintenanceOpen = true))
+        assertNull(SettingsScreenPolicy.block(Screen(headings = listOf("Developer options")),
+            developerOptionsEnabled = true, maintenanceOpen = true))
+        assertEquals(Block(Area.RESET, Scope.CATEGORY), SettingsScreenPolicy.block(
+            Screen(headings = listOf("Reset")), maintenanceOpen = false))
+    }
+
+    @Test fun developerMenuNamesInSystemOverviewAndSearchResultsStayAllowed() {
+        assertNull(SettingsScreenPolicy.block(Screen(headings = listOf("System"), labels = listOf("Developer options"))))
+        assertNull(SettingsScreenPolicy.block(Screen(className = "SearchActivity", labels = listOf("Build number", "Software information"), list = true)))
+        assertNull(SettingsScreenPolicy.block(Screen(headings = listOf("Settings"), labels = listOf("About tablet", "Build number"))))
+    }
+
     @Test fun vpnListAndDetailAreProtectedButNetworkLabelsAloneAreNot() {
         assertEquals(Block(Area.VPN, Scope.CATEGORY), SettingsScreenPolicy.block(Screen(headings = listOf("VPN"))))
         assertEquals(Block(Area.VPN, Scope.CATEGORY), SettingsScreenPolicy.block(Screen(className = "com.android.settings.vpn2.VpnSettings")))

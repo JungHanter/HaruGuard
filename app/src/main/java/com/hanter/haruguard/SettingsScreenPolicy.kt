@@ -7,6 +7,7 @@ internal object SettingsScreenPolicy {
     enum class Area(val label: String) {
         APP("앱 관리"), ADMIN("기기 관리자"), ACCESSIBILITY("접근성"), VPN("VPN"),
         BATTERY("배터리 최적화"), BACKGROUND("백그라운드 실행"), ALARM("알람 권한"),
+        RESET("초기화"), DEVELOPER("개발자옵션 활성화"),
     }
     enum class Scope(val label: String) {
         OUR_APP("HaruGuard 상세 화면"), CATEGORY("해당 메뉴"),
@@ -36,9 +37,15 @@ internal object SettingsScreenPolicy {
     private enum class Kind { APP, BATTERY_DETAIL, BATTERY_LIST, BACKGROUND_DETAIL, BACKGROUND_LIST, ALARM_DETAIL, ALARM_LIST }
 
     /** 상위 Settings·Network·Battery 등은 메뉴 항목 이름만으로 차단하지 않는다. */
-    fun block(screen: Screen): Block? {
+    fun block(screen: Screen, developerOptionsEnabled: Boolean = false, maintenanceOpen: Boolean = false): Block? {
+        val result = classify(screen, developerOptionsEnabled)
+        // 개발자옵션 활성화는 5분 개방으로 허용하지 않고, 부모가 설정 보호를 꺼야 한다.
+        return result?.takeIf { !maintenanceOpen || it.area == Area.DEVELOPER }
+    }
+
+    private fun classify(screen: Screen, developerOptionsEnabled: Boolean): Block? {
         val name = screen.className.lowercase(Locale.ROOT)
-        val titles = screen.headings.map(::normalize).toSet()
+        val titles = screen.headings.map { normalize(it).trimEnd('?', '？') }.toSet()
         val labels = screen.labels.map(::normalize)
         val ids = screen.viewIds.map(::id)
         fun named(vararg values: String) = values.any { name.contains(it) }
@@ -56,7 +63,42 @@ internal object SettingsScreenPolicy {
         val adminTitle = titled("Device admin apps", "Device administrators", "Device administrator",
             "기기 관리자 앱", "디바이스 관리자 앱", "기기 관리자")
         val accessibilityTitle = titled("Accessibility", "접근성")
-        if (safeTitle && !vpnTitle && !adminTitle && !accessibilityTitle) return null
+        val resetTitle = titled("Reset", "Reset options", "Reset settings", "Reset all settings",
+            "Reset network settings", "Reset mobile network settings", "Reset Wi-Fi and Bluetooth settings",
+            "Reset Bluetooth & Wi-Fi", "Reset Bluetooth and Wi-Fi", "Reset Wi-Fi, mobile & Bluetooth",
+            "Reset Wi-Fi, mobile and Bluetooth", "Reset app preferences",
+            "Reset accessibility settings", "Factory data reset", "Factory reset", "Erase all data (factory reset)",
+            "Erase all data", "초기화", "초기화 옵션", "설정 초기화", "모든 설정 초기화", "네트워크 설정 초기화",
+            "모바일 네트워크 설정 초기화", "Wi-Fi 및 블루투스 설정 초기화", "와이파이 및 블루투스 설정 초기화",
+            "Wi-Fi, 모바일, 블루투스 초기화", "네트워크 재설정", "앱 환경설정 재설정",
+            "앱 설정 초기화", "앱 환경설정 초기화", "접근성 설정 초기화", "기기 전체 초기화", "공장 초기화",
+            "모든 데이터 삭제", "모든 데이터 삭제(초기화)", "모든 데이터 삭제 (초기화)")
+        if (safeTitle && !vpnTitle && !adminTitle && !accessibilityTitle && !resetTitle) return null
+        // 실제 초기화 제목을 이전 Software information 창의 클래스 힌트보다 우선한다.
+        if (resetTitle) return Block(Area.RESET, Scope.CATEGORY)
+        val softwareInfo = titled("Software information", "Software info", "소프트웨어 정보") ||
+            named("softwareinformation", "softwareinfo")
+        val aboutDevice = titled("About phone", "About tablet", "About device", "About emulated device",
+            "About emulated phone", "About emulated tablet", "휴대전화 정보", "태블릿 정보", "디바이스 정보", "기기 정보") ||
+            named("mydeviceinfo", "deviceinfodashboard", "aboutphone", "abouttablet")
+        val buildNumber = labels.any { it == "build number" || it == "빌드 번호" } || ids.any { it == "build_number" }
+        val developmentSettings = titled("Developer options", "Developer settings", "Development settings", "개발자 옵션", "개발자옵션") ||
+            named("developmentsettings", "developmentdashboard", "developmentpreferences", "developeroptions")
+        // 7번째 탭 뒤에 취소하는 대신 빌드 번호가 있는 페이지에서 미리 복귀한다.
+        // 삼성은 Software information, AOSP는 About 화면에 빌드 번호가 있다.
+        // 이미 개발자옵션이 켜져 있으면 이 제한으로 개발자 메뉴 전체를 막지 않는다.
+        // https://developer.android.com/studio/debug/dev-options#enable
+        if (!developerOptionsEnabled && (softwareInfo || aboutDevice && buildNumber || developmentSettings ||
+                titled("Build number", "빌드 번호") || named("buildnumber"))) {
+            return Block(Area.DEVELOPER, Scope.CATEGORY)
+        }
+        // 초기화 목록뿐 아니라 검색 등으로 직접 연 개별 실행·확인 화면도 보호한다.
+        // 네트워크 초기화는 VPN 승인까지 해제할 수 있다.
+        // https://android.googlesource.com/platform/packages/apps/Settings/+/021f36b3fa9/src/com/android/settings/ResetNetworkConfirm.java
+        if (named("resetdashboard", "resetoptions", "resetnetwork", "resetbluetooth", "resetwifi",
+                "resetaccessibility", "resetsettings", "resetapp", "masterclear", "factoryreset", "mainclear")) {
+            return Block(Area.RESET, Scope.CATEGORY)
+        }
         if (vpnTitle || named("vpnsettings", "vpndetails", "vpnappdialog", "vpnconfig", "vpnpreferences")) {
             return Block(Area.VPN, Scope.CATEGORY)
         }

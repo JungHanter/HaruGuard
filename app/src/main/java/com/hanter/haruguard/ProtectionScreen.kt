@@ -98,19 +98,20 @@ private fun ParentControls(
     var changePin by remember { mutableStateOf(false) }
     var showRecoveryWarning by remember { mutableStateOf(false) }
     Text("부모 관리", style = MaterialTheme.typography.titleLarge)
-    Text("인증은 2분간 유효하며 앱을 나가거나 화면을 잠그면 다시 PIN을 요구합니다.", style = MaterialTheme.typography.bodySmall)
+    Text("일반 인증은 2분간 유효하며 앱을 나가면 다시 PIN을 요구합니다. 부모 설정 개방 5분 동안은 앱을 다녀와도 PIN을 묻지 않습니다. ‘지금 잠그기’·5분 만료·화면 잠금 시 다시 잠깁니다.", style = MaterialTheme.typography.bodySmall)
     ToggleCard("VPN 필터 켜기", "켜 두면 종료·오류 후 복구를 시도합니다. 기존 YouTube 시험 필터를 사용합니다.",
         state.filteringRequested, !busy && vpn.phase != VpnPhase.STARTING && vpn.phase != VpnPhase.STOPPING, onVpn)
     if (state.filteringRequested && vpn.phase == VpnPhase.ERROR) {
         Button(onClick = { onVpn(true) }, enabled = !busy) { Text("VPN 승인·연결 다시 시도") }
     }
-    ToggleCard("설정 화면 보호", "HaruGuard의 앱 관리·실행 권한과 관리자·접근성·VPN 화면을 보호합니다. Wi-Fi·밝기·소리 등 일반 설정은 사용할 수 있습니다.",
+    ToggleCard("설정 화면 보호", "HaruGuard의 앱 관리·실행 권한과 관리자·접근성·VPN·초기화 화면을 보호합니다. 개발자옵션이 꺼져 있으면 활성화 경로도 보호합니다. Wi-Fi·밝기·소리 등 일반 설정은 사용할 수 있습니다.",
         state.protection, !busy, onProtection)
+    Text("개발자옵션을 켜려면 부모 PIN으로 설정 화면 보호를 먼저 끄세요. 5분 개방만으로는 활성화할 수 없습니다. 사용 후 개발자옵션을 끄고 설정 화면 보호를 다시 켜세요.", style = MaterialTheme.typography.bodySmall)
     Text("앱을 구분할 수 없는 상세 화면이나 목록에서 바로 권한을 바꾸는 경우에는 해당 화면·목록을 보호합니다.", style = MaterialTheme.typography.bodySmall)
     ProtectionRuntime.lastBlock?.let {
         Text("마지막 차단: ${it.area.label} · ${it.scope.label}", style = MaterialTheme.typography.bodySmall)
     }
-    Text("처음에는 아래 항목을 설정한 뒤 보호를 켜세요. 각 설정 버튼은 5분간 설정 접근을 허용합니다.")
+    Text("처음에는 아래 항목을 설정한 뒤 보호를 켜세요. 설정 버튼으로 5분간 설정 접근을 허용합니다. 개방 중 다른 버튼을 눌러도 남은 시간은 늘어나지 않습니다.")
     StatusButton("1. 일반 기기 관리자", if (state.admin) "활성화됨" else "설정 필요", busy) { onSettings(ParentSetting.ADMIN) }
     StatusButton("2. 접근성 설정 보호", when {
         state.accessibilityConnected -> "연결됨"

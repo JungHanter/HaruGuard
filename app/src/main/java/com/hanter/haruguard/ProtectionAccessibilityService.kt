@@ -141,8 +141,17 @@ class ProtectionAccessibilityService : AccessibilityService() {
     }
 
     private fun shouldProtect(): Boolean = ParentAccess.isProtectionEnabled(this) &&
-        !ParentAccess.isMaintenanceOpen() && getSystemService(PowerManager::class.java).isInteractive &&
+        getSystemService(PowerManager::class.java).isInteractive &&
         !getSystemService(KeyguardManager::class.java).isKeyguardLocked
+
+    private fun settingsBlock(screen: SettingsScreenPolicy.Screen): SettingsScreenPolicy.Block? {
+        // 읽기만 수행한다. 개발자옵션·USB 디버깅의 실제 설정값은 변경하지 않는다.
+        // https://developer.android.com/reference/android/provider/Settings.Global#DEVELOPMENT_SETTINGS_ENABLED
+        val developerEnabled = runCatching {
+            Settings.Global.getInt(contentResolver, Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, 0) != 0
+        }.getOrDefault(false)
+        return SettingsScreenPolicy.block(screen, developerEnabled, ParentAccess.isMaintenanceOpen())
+    }
 
     private fun inspectCurrentWindows(freshHint: WindowHint? = null) {
         try {
@@ -204,9 +213,10 @@ class ProtectionAccessibilityService : AccessibilityService() {
         // 실제 VPN·관리자·접근성 등의 클래스가 확인될 때만 제한적으로 보완한다.
         val hintedBlock = freshHint?.let {
             if (packageSurfaces[it.packageName] == ProtectedScreenPolicy.Surface.SETTINGS)
-                SettingsScreenPolicy.block(SettingsScreenPolicy.Screen(className = it.className)) else null
+                settingsBlock(SettingsScreenPolicy.Screen(className = it.className)) else null
         }
-        val hintedVpn = freshHint?.let { packageSurfaces[it.packageName] == ProtectedScreenPolicy.Surface.VPN_DIALOG } == true
+        val hintedVpn = !ParentAccess.isMaintenanceOpen() &&
+            freshHint?.let { packageSurfaces[it.packageName] == ProtectedScreenPolicy.Surface.VPN_DIALOG } == true
         if (!foundProtected && freshHint != null && (hintedBlock != null || hintedVpn) &&
             ProtectedScreenPolicy.canUseMissingRootHint(
                 SystemClock.uptimeMillis() - freshHint.eventUptime,
@@ -231,6 +241,8 @@ class ProtectionAccessibilityService : AccessibilityService() {
 
     private fun isProtected(root: AccessibilityNodeInfo, windowTitle: String? = null): Boolean {
         val surface = packageSurfaces[root.packageName?.toString()] ?: return false
+        // 5분 개방에서는 개발자옵션 활성화만 예외적으로 계속 보호한다.
+        if (ParentAccess.isMaintenanceOpen() && surface != ProtectedScreenPolicy.Surface.SETTINGS) return false
         if (surface == ProtectedScreenPolicy.Surface.VPN_DIALOG) return true
         val samples = boundedSamples(root)
         val hint = windowHints[root.windowId]?.takeIf {
@@ -239,7 +251,7 @@ class ProtectionAccessibilityService : AccessibilityService() {
         }
         if (surface == ProtectedScreenPolicy.Surface.SETTINGS) {
             val pageClass = root.className?.toString().orEmpty() + " " + hint?.className.orEmpty()
-            val block = SettingsScreenPolicy.block(SettingsScreenPolicy.screen(pageClass, samples, windowTitle))
+            val block = settingsBlock(SettingsScreenPolicy.screen(pageClass, samples, windowTitle))
             if (block != null) ProtectionRuntime.lastBlock = block
             return block != null
         }

@@ -55,6 +55,7 @@ class MainActivity : ComponentActivity() {
     private var awaitingConsent by mutableStateOf(false)
     private var recoveryCode by mutableStateOf<String?>(null)
     private var consentRequestedByParent = false
+    private var consentOpenedMaintenance = false
 
     private val vpnConsent = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         awaitingConsent = false
@@ -62,8 +63,9 @@ class MainActivity : ComponentActivity() {
         consentRequestedByParent = false
         if (result.resultCode == Activity.RESULT_OK && authorized) startFiltering()
         else feedback = if (authorized) getString(R.string.vpn_permission_cancelled) else "부모 인증 후 VPN을 다시 켜 주세요."
-        // VPN 동의에 사용한 설정 개방은 결과를 받는 즉시 닫는다.
-        ParentAccess.lock()
+        // VPN 동의 때문에 새로 연 개방만 닫고, 부모가 이미 열어 둔 5분은 유지한다.
+        if (consentOpenedMaintenance) ParentAccess.lock()
+        consentOpenedMaintenance = false
         refreshUi()
     }
 
@@ -106,7 +108,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
-        // 설정 개방 시간만 명시적으로 유지한다. 다시 앱에 들어오면 PIN을 다시 요구한다.
+        // 일반 인증은 앱 이탈 시 끝내되, 부모가 연 5분 동안은 재입력 없이 돌아온다.
         ParentAccess.lockAuthenticationOnly()
         recoveryCode = null
         refreshUi()
@@ -214,12 +216,15 @@ class MainActivity : ComponentActivity() {
             }
             val consent = VpnService.prepare(this)
             if (consent != null) {
+                consentOpenedMaintenance = !ParentAccess.isMaintenanceOpen()
                 if (!ParentAccess.openMaintenance()) return
                 consentRequestedByParent = true
                 awaitingConsent = true
                 vpnConsent.launch(consent)
             } else startFiltering()
         } catch (error: Exception) {
+            if (consentOpenedMaintenance) ParentAccess.lock()
+            consentOpenedMaintenance = false
             consentRequestedByParent = false
             awaitingConsent = false
             feedback = getString(R.string.vpn_failed, error.javaClass.simpleName)
@@ -269,7 +274,7 @@ class MainActivity : ComponentActivity() {
         }
         try {
             startActivity(intent)
-            feedback = "설정을 5분간 열었습니다. 끝나면 앱의 ‘지금 잠그기’를 누르세요."
+            feedback = "부모 설정 개방 중입니다. 끝나면 앱의 ‘지금 잠그기’를 누르세요. 남은 시간은 위에서 확인할 수 있습니다."
         } catch (error: Exception) {
             ParentAccess.lock()
             feedback = "설정을 열지 못했습니다. 보호를 다시 잠갔습니다: ${error.javaClass.simpleName}"

@@ -121,14 +121,21 @@ internal class ParentSession(private val elapsedRealtime: () -> Long) {
         return true
     }
 
-    @Synchronized fun isAuthenticated(): Boolean = authenticatedUntil > elapsedRealtime()
+    @Synchronized fun isAuthenticated(): Boolean {
+        val now = elapsedRealtime()
+        // 부모가 연 5분 동안은 설정 앱을 다녀와도 앱 내부 설정을 계속 사용할 수 있다.
+        return authenticatedUntil > now || maintenanceUntil > now
+    }
 
     @Synchronized fun isAuthenticatedGeneration(expectedGeneration: Long): Boolean =
         generation == expectedGeneration && isAuthenticated()
 
     @Synchronized fun openMaintenance(): Boolean {
-        if (!isAuthenticated()) return false
-        maintenanceUntil = elapsedRealtime() + MAINTENANCE_DURATION_MILLIS
+        val now = elapsedRealtime()
+        if (authenticatedUntil <= now && maintenanceUntil <= now) return false
+        // 설정 버튼을 다시 눌러도 이미 시작한 개방 시간을 연장하지 않는다.
+        if (maintenanceUntil <= now) maintenanceUntil = now + MAINTENANCE_DURATION_MILLIS
+        authenticatedUntil = maintenanceUntil
         return true
     }
 
