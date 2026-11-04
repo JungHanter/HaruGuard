@@ -56,11 +56,18 @@ android {
     }
 
     buildTypes {
+        // Android 10에서 최적화된 Kotlin 클래스의 재배치/접근 오류가 발생해
+        // Debug와 Release 모두 R8 최적화를 사용하지 않는다.
+        // https://developer.android.com/topic/performance/app-optimization/optimize-specified-packages
+        debug {
+            optimization {
+                enable = false
+            }
+        }
         release {
             if (releaseSigningReady) signingConfig = signingConfigs.getByName("fixedRelease")
             optimization {
-                enable = true
-                packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")
+                enable = false
             }
         }
     }
