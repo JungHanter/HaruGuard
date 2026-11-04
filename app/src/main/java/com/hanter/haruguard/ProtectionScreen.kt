@@ -51,6 +51,9 @@ internal fun ProtectionScreen(
         Column(Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text(stringResource(R.string.p0_title), style = MaterialTheme.typography.headlineMedium)
+            Text(stringResource(R.string.app_version, BuildConfig.VERSION_NAME),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(stringResource(when (vpn.phase) {
                 VpnPhase.STARTING -> R.string.vpn_starting
                 VpnPhase.FILTERING -> R.string.vpn_filtering

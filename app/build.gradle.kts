@@ -1,9 +1,11 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
 }
 
-// No debug-key fallback for release. Without these inputs, assembleRelease produces an unsigned APK.
+// Release 키가 없으면 unsigned APK를 만들며 Debug 키로 대체하지 않는다.
 val releaseSigningInputs = listOf(
     "HARUGUARD_KEYSTORE_FILE", "HARUGUARD_KEY_ALIAS", "HARUGUARD_STORE_PASSWORD", "HARUGUARD_KEY_PASSWORD",
 ).associateWith { providers.environmentVariable(it).orNull }
@@ -11,6 +13,20 @@ val releaseSigningReady = releaseSigningInputs.values.all { !it.isNullOrBlank() 
 check(releaseSigningReady || releaseSigningInputs.values.all { it.isNullOrBlank() }) {
     "Release signing requires all HARUGUARD_KEYSTORE_FILE, HARUGUARD_KEY_ALIAS, HARUGUARD_STORE_PASSWORD and HARUGUARD_KEY_PASSWORD inputs."
 }
+
+// 화면 표시와 APK 업데이트 판정에 같은 버전 정보를 사용한다.
+// https://developer.android.com/studio/publish/versioning
+val appVersion = Properties().apply {
+    rootProject.file("version.properties").inputStream().use { load(it) }
+}
+val appVersionName = providers.gradleProperty("haruguardVersionName")
+    .getOrElse(appVersion.getProperty("versionName"))
+val appVersionCode = providers.gradleProperty("haruguardVersionCode")
+    .getOrElse(appVersion.getProperty("versionCode")).toInt()
+check(appVersionName.matches(Regex("(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)"))) {
+    "versionName must use major.minor.patch format (for example, 0.0.1)."
+}
+check(appVersionCode in 1..2_100_000_000) { "versionCode must be between 1 and 2100000000." }
 
 android {
     namespace = "com.hanter.haruguard"
@@ -22,8 +38,8 @@ android {
         applicationId = "com.hanter.haruguard"
         minSdk = 29
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -53,6 +69,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
     buildFeatures {
+        buildConfig = true
         compose = true
     }
 }

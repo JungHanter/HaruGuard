@@ -1,5 +1,6 @@
 <resources>
     <string name="app_name">HaruGuard</string>
+    <string name="app_version">버전 %1$s</string>
     <string name="p0_title">HaruGuard P0b</string>
     <string name="p0_description">VPN 실행 유지와 부모 설정 보호를 시험합니다.</string>
     <string name="admin_label">HaruGuard 앱 보호</string>
