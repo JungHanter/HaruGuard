@@ -1,31 +1,18 @@
 package com.hanter.haruguard.vpn
 
-import java.util.Locale
-
-/** YouTube 도메인 판정. 실제 연결 허용은 YouTubeRouting의 앱 UID 정책으로 결정한다. */
-object YouTubeDnsFilter {
-    const val YOUTUBE_PACKAGE = "com.google.android.youtube"
+/** 기존 VPN 주소를 유지한다. 서비스별 도메인 정책은 FilterPolicy에서 판정한다. */
+object DnsPackets {
     const val VPN_ADDRESS = "10.203.0.1"
     const val DNS_ADDRESS = "10.203.0.2"
-
-    private val blockedDomains = setOf(
-        "youtube.com", "youtu.be", "youtube-nocookie.com", "googlevideo.com", "ytimg.com",
-        "youtubei.googleapis.com", "youtube.googleapis.com", "youtubeembeddedplayer.googleapis.com",
-    )
-
-    fun isBlocked(host: String): Boolean {
-        val normalized = host.trimEnd('.').lowercase(Locale.ROOT)
-        return blockedDomains.any { normalized == it || normalized.endsWith(".$it") }
-    }
 }
 
-/** A single, uncompressed standard DNS question. Malformed/multi-question queries are rejected. */
+/** 압축되지 않은 표준 DNS 질문 하나만 받고 잘못된 형식/복수 질문은 거부한다. */
 data class DnsQuestion(val host: String, val endOffset: Int) {
     companion object {
         fun parse(message: ByteArray): DnsQuestion? {
             if (message.size < 12 || readU16(message, 4) != 1) return null
             val flags = readU16(message, 2)
-            if (flags and 0xf800 != 0) return null // Responses and non-standard opcodes.
+            if (flags and 0xf800 != 0) return null // 응답 패킷과 비표준 opcode는 제외한다.
             var offset = 12
             var nameLength = 0
             val labels = mutableListOf<String>()
@@ -35,7 +22,7 @@ data class DnsQuestion(val host: String, val endOffset: Int) {
                     if (offset + 4 > message.size || labels.isEmpty()) return null
                     return DnsQuestion(labels.joinToString("."), offset + 4)
                 }
-                // Compressed query names are not emitted by normal system DNS clients.
+                // 일반 시스템 DNS 클라이언트는 질문 이름을 압축해서 보내지 않는다.
                 if (length > 63 || offset + length > message.size) return null
                 nameLength += length + 1
                 if (nameLength > 254) return null
@@ -55,14 +42,14 @@ object DnsReply {
 
     fun error(query: ByteArray, question: DnsQuestion, rcode: Int): ByteArray =
         query.copyOf(question.endOffset).also { reply ->
-            // Preserve RD/CD, set QR/RA, and clear answer, authority and additional counts.
+            // RD/CD는 유지하고 QR/RA를 설정한 뒤 응답·권한·추가 레코드 수를 지운다.
             writeU16(reply, 2, 0x8080 or (readU16(query, 2) and 0x0110) or rcode)
             for (offset in 6..10 step 2) writeU16(reply, offset, 0)
         }
 
     fun upstream(query: ByteArray, answer: ByteArray): ByteArray? {
         if (answer.size < 12 || answer.size > 65_507 || readU16(answer, 2) and 0x8000 == 0) return null
-        // System resolvers may rewrite transaction IDs; clients require the original ID.
+        // 시스템 리졸버가 바꾼 트랜잭션 ID는 원래 클라이언트 질의 ID로 복원한다.
         return answer.copyOf().also {
             it[0] = query[0]
             it[1] = query[1]
@@ -70,7 +57,7 @@ object DnsReply {
     }
 }
 
-/** Only the virtual DNS /32 is routed into the TUN; ordinary traffic uses the physical network. */
+/** TUN의 가상 DNS 주소로 온 UDP DNS만 파싱한다. 서비스 연결은 별도 내부 주소 대역에서 처리한다. */
 data class DnsUdpPacket(
     val sourceAddress: ByteArray,
     val destinationAddress: ByteArray,
@@ -110,7 +97,7 @@ data class DnsUdpPacket(
             if (headerSize < 20 || headerSize + 8 > length || packet[9].toInt() != 17) return null
             val totalSize = readU16(packet, 2)
             if (totalSize < headerSize + 8 || totalSize > length) return null
-            if (readU16(packet, 6) and 0x3fff != 0) return null // No IP fragment reassembly in P0.
+            if (readU16(packet, 6) and 0x3fff != 0) return null // IP 단편 재조립은 지원하지 않는다.
             if (!packet.copyOfRange(16, 20).contentEquals(virtualDns)) return null
             val udpSize = readU16(packet, headerSize + 4)
             if (udpSize < 20 || headerSize + udpSize != totalSize) return null

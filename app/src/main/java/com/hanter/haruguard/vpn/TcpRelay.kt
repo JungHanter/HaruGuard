@@ -15,7 +15,7 @@ import kotlin.random.Random
  * https://github.com/xVanTuring/free-proxy/blob/f13432fe12866fa6f66b150f25c2b1ec0549eb77/app/src/main/java/tech/xvanturing/freeproxy/vpn/TcpSession.kt
  * Apache-2.0 고지: assets/licenses/free-proxy-NOTICE.txt 및 free-proxy-LICENSE.txt
  */
-internal class YouTubeTcpConnection(
+internal class TcpRelay(
     val key: ConnectionKey,
     private val scope: CoroutineScope,
     private val connect: ((Socket) -> Boolean) -> Socket,

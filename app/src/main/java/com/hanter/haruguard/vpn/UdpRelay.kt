@@ -10,7 +10,7 @@ import java.net.DatagramSocket
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** QUIC 등 암호화된 UDP 바이트를 그대로 전달하며 소유권을 잃은 흐름의 응답은 폐기한다. */
-internal class YouTubeUdpConnection(
+internal class UdpRelay(
     private val scope: CoroutineScope,
     private val connect: ((DatagramSocket) -> Boolean) -> DatagramSocket,
     private val mayReceive: () -> Boolean,

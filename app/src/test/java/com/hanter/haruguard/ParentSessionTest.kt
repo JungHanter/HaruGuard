@@ -9,11 +9,13 @@ class ParentSessionTest {
     private var elapsed = 1_000L
     private val session = ParentSession { elapsed }
 
-    @Test fun authenticationExpiresAfterTwoMinutes() {
+    @Test fun authenticationExpiresAtFiveMinutesNotTwo() {
         assertFalse(session.isAuthenticated())
         assertFalse(session.openMaintenance())
         assertTrue(session.authenticate(session.generation()))
-        elapsed += ParentSession.AUTH_DURATION_MILLIS - 1
+        elapsed += 2 * 60_000L
+        assertTrue(session.isAuthenticated())
+        elapsed += 3 * 60_000L - 1
         assertTrue(session.isAuthenticated())
         elapsed++
         assertFalse(session.isAuthenticated())
@@ -26,11 +28,11 @@ class ParentSessionTest {
         session.lockAuthenticationOnly()
         assertTrue(session.isAuthenticated())
         assertEquals(ParentSession.MAINTENANCE_DURATION_MILLIS, session.maintenanceRemainingMillis())
-        elapsed += ParentSession.AUTH_DURATION_MILLIS
+        elapsed += 2 * 60_000L
         assertTrue(session.isAuthenticated())
         session.lockAuthenticationOnly()
         assertTrue(session.isAuthenticated())
-        elapsed += ParentSession.MAINTENANCE_DURATION_MILLIS - ParentSession.AUTH_DURATION_MILLIS
+        elapsed += 3 * 60_000L
         assertFalse(session.isAuthenticated())
         assertEquals(0L, session.maintenanceRemainingMillis())
     }
@@ -52,7 +54,7 @@ class ParentSessionTest {
         session.authenticate(session.generation())
         elapsed += ParentSession.AUTH_DURATION_MILLIS - 1
         session.openMaintenance()
-        elapsed += ParentSession.MAINTENANCE_DURATION_MILLIS - 1
+        assertEquals(1L, session.maintenanceRemainingMillis())
         assertTrue(session.isAuthenticated())
         elapsed++
         assertFalse(session.isAuthenticated())

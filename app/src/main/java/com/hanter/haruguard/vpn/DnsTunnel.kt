@@ -21,10 +21,11 @@ import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** 일반 DNS와 YouTube 내부 주소만 처리하고, 나머지 통신은 물리 네트워크 경로를 유지한다. */
+/** 일반 DNS와 서비스 내부 주소만 처리하고, 나머지 통신은 물리 네트워크 경로를 유지한다. */
 internal class DnsTunnel(
     private val context: VpnService,
     private val descriptor: ParcelFileDescriptor,
+    initialPolicy: FilterPolicy,
     private val onBlocked: () -> Unit,
     private val onResolveError: () -> Unit,
     private val onFailure: (Exception) -> Unit,
@@ -35,8 +36,8 @@ internal class DnsTunnel(
     private val closed = AtomicBoolean(false)
     private val faulted = AtomicBoolean(false)
     private val writes = ArrayBlockingQueue<ByteArray>(256)
-    private val routing = YouTubeRouting()
-    private val connections = YouTubeConnections(context, routing, ::writePacket, onBlocked, onResolveError)
+    private val routing = DomainRouting()
+    private val connections = DomainConnections(context, routing, initialPolicy, ::writePacket, onBlocked, onResolveError)
     private val pending = ConcurrentHashMap<Any, CancellationSignal>()
     @Volatile private var reader: Thread? = null
     @Volatile private var writer: Thread? = null
@@ -60,6 +61,27 @@ internal class DnsTunnel(
         writer!!.start()
         reader!!.start()
     }
+
+    fun applyPolicy(policy: FilterPolicy) {
+        if (connections.policy.settings == policy.settings) return
+        connections.applyPolicy(policy)
+        writes.clear()
+    }
+
+    /** 지연된 물리 DNS 응답에도 최신 정책을 다시 적용해 규칙 저장 직후의 우회를 막는다. */
+    private fun replyForPolicy(packet: DnsUdpPacket, question: DnsQuestion): Boolean =
+        when (connections.policy.decision(question.host)) {
+            DomainDecision.Block -> {
+                onBlocked()
+                writeReply(packet, DnsReply.error(packet.query, question, DnsReply.NXDOMAIN))
+                true
+            }
+            is DomainDecision.OfficialApps -> {
+                writeReply(packet, routing.reply(packet.query, question))
+                true
+            }
+            DomainDecision.Direct -> false
+        }
 
     private fun readPackets() {
         val buffer = ByteArray(65_535)
@@ -88,12 +110,7 @@ internal class DnsTunnel(
                     continue
                 }
                 val question = DnsQuestion.parse(packet.query) ?: continue
-                if (YouTubeDnsFilter.isBlocked(question.host)) {
-                    // 허용 여부는 공유될 수 있는 DNS 응답 대신 실제 연결의 UID로 결정한다.
-                    writeReply(packet, routing.reply(packet.query, question))
-                } else {
-                    forward(packet, question)
-                }
+                if (!replyForPolicy(packet, question)) forward(packet, question)
             }
         } catch (error: Exception) {
             fail(error)
@@ -141,6 +158,7 @@ internal class DnsTunnel(
                 object : DnsResolver.Callback<ByteArray> {
                     override fun onAnswer(answer: ByteArray, rcode: Int) {
                         pending.remove(token)
+                        if (replyForPolicy(packet, question)) return
                         val reply = DnsReply.upstream(packet.query, answer)
                         if (reply == null) onResolveError()
                         writeReply(packet, reply ?: DnsReply.error(packet.query, question, DnsReply.SERVFAIL))
@@ -149,6 +167,7 @@ internal class DnsTunnel(
                     override fun onError(error: DnsResolver.DnsException) {
                         pending.remove(token)
                         if (!closed.get()) {
+                            if (replyForPolicy(packet, question)) return
                             onResolveError()
                             writeReply(packet, DnsReply.error(packet.query, question, DnsReply.SERVFAIL))
                         }

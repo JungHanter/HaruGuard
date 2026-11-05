@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.concurrent.thread
 
-class YouTubeTcpConnectionTest {
+class TcpRelayTest {
     @Test(timeout = 10000) fun streamLargerThanTheTcpWindowKeepsItsBytesAndOrder() = Harness().use { h ->
         h.open(); h.ack(window = 8192)
         val expected = ByteArray(256 * 1024).also { java.util.Random(29).nextBytes(it) }
@@ -45,8 +45,8 @@ class YouTubeTcpConnectionTest {
         val completed = CountDownLatch(1)
         val output = LinkedBlockingQueue<ByteArray>()
         val finished = AtomicInteger()
-        val connection = YouTubeTcpConnection(
-            ConnectionKey(1, 45000, YouTubeRouting.NETWORK + 1, 443), scope,
+        val connection = TcpRelay(
+            ConnectionKey(1, 45000, DomainRouting.NETWORK + 1, 443), scope,
             connect = { register ->
                 check(register(socket))
                 registered.countDown()
@@ -211,8 +211,8 @@ class YouTubeTcpConnectionTest {
         lateinit var remote: Socket
         var clientNext = seqAdvance(clientInitial, 1)
         var serverNext = seqAdvance(serverInitial, 1)
-        val connection = YouTubeTcpConnection(
-            ConnectionKey(0x0acb0001, 45000, YouTubeRouting.NETWORK + 1, 443), scope,
+        val connection = TcpRelay(
+            ConnectionKey(0x0acb0001, 45000, DomainRouting.NETWORK + 1, 443), scope,
             connect = { register ->
                 Socket().also {
                     check(register(it))

@@ -5,7 +5,7 @@ import org.junit.Test
 import java.util.Random
 
 class ConnectionPacketsTest {
-    private val key = ConnectionKey(0x0acb0001, 45000, YouTubeRouting.NETWORK + 1, 443)
+    private val key = ConnectionKey(0x0acb0001, 45000, DomainRouting.NETWORK + 1, 443)
 
     @Test fun tcpResponsesHaveCorrectEndpointsOptionsPayloadAndChecksums() {
         val payload = byteArrayOf(0, -1, 7, 1, 5)

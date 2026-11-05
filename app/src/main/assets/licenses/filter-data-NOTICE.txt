@@ -1,0 +1,13 @@
+Domain list sources, checked 2026-11-05
+
+NextDNS services: https://github.com/nextdns/services (MIT)
+Selected service domains; shared ByteDance/Douyin hosts omitted.
+Facebook uses facebook.com/fb.com/fb.me; shared Meta media hosts are not blocked as a whole.
+
+Public Suffix List: https://publicsuffix.org/list/public_suffix_list.dat (MPL-2.0)
+Unmodified source is bundled as assets/public_suffix_list.dat.
+
+Editable Kakao candidates: https://netxhack.com/hack/block-kakaotalk-shorts/
+Core-host exclusions checked against https://github.com/SecuredEevee/kakao_adblock
+Editable Naver candidates: https://m.naver.com/shorts/ and its public viewer script.
+These candidates have not been verified on the target device.

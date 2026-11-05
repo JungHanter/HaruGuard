@@ -3,32 +3,32 @@ package com.hanter.haruguard.vpn
 import org.junit.Assert.*
 import org.junit.Test
 
-class YouTubeRoutingTest {
-    @Test fun sameCachedAddressStillRequiresTheYoutubeUidForEveryApp() {
-        val routing = YouTubeRouting()
-        val address = requireNotNull(routing.addressFor("www.youtube.com"))
-        val host = routing.hostFor(address)
-        assertTrue(YouTubeRouting.mayConnect(host, 10123, 10123))
-        assertFalse(YouTubeRouting.mayConnect(host, 10456, 10123))
-        assertFalse(YouTubeRouting.mayConnect(host, -1, 10123))
-        assertFalse(YouTubeRouting.mayConnect(host, 10123, null))
-        assertFalse(YouTubeRouting.mayConnect(null, 10123, 10123))
-        assertFalse(YouTubeRouting.mayConnect("youtube.com.example.org", 10123, 10123))
+class DomainRoutingTest {
+    @Test fun sameCachedAddressStillRequiresTheServiceUidForEveryApp() {
+        val routing = DomainRouting()
+        val host = routing.hostFor(requireNotNull(routing.addressFor("www.youtube.com")))
+        val policy = FilterPolicy(FilterSettings())
+        assertTrue(policy.mayConnect(host, { 10123 }, { 10123 }))
+        assertFalse(policy.mayConnect(host, { 10456 }, { 10123 }))
+        assertFalse(policy.mayConnect(host, { -1 }, { 10123 }))
+        assertFalse(policy.mayConnect(host, { 10123 }, { null }))
+        assertFalse(policy.mayConnect(null, { 10123 }, { 10123 }))
     }
 
-    @Test fun unrelatedDomainsStayOutsideTheInternalRoute() {
-        val routing = YouTubeRouting(1)
-        listOf("google.com", "accounts.google.com", "notyoutube.com", "youtube.com.example.org").forEach {
-            assertNull(routing.addressFor(it))
-        }
-        assertNotNull(routing.addressFor("youtube.com"))
-        assertFalse(YouTubeRouting.contains(0x08080808))
-        assertTrue(YouTubeRouting.contains(requireNotNull(routing.addressFor("youtube.com"))))
-        assertNull(routing.hostFor(YouTubeRouting.NETWORK + 500))
+    @Test fun differentServicesUseOnePoolWithoutConfusingHosts() {
+        val routing = DomainRouting(2)
+        val youtube = requireNotNull(routing.addressFor("youtube.com"))
+        val tiktok = requireNotNull(routing.addressFor("tiktok.com"))
+        assertNotEquals(youtube, tiktok)
+        assertEquals("tiktok.com", routing.hostFor(tiktok))
+        assertNull(routing.addressFor("https://youtube.com"))
+        assertFalse(DomainRouting.contains(0x08080808))
+        assertTrue(DomainRouting.contains(youtube))
+        assertNull(routing.hostFor(DomainRouting.NETWORK + 500))
     }
 
     @Test fun stableHostMappingsNeverReuseAnAddressForAnotherHost() {
-        val routing = YouTubeRouting(2)
+        val routing = DomainRouting(2)
         val first = routing.addressFor("YOUTUBE.COM.")
         assertEquals(first, routing.addressFor("youtube.com"))
         val second = routing.addressFor("video.googlevideo.com")
@@ -39,7 +39,7 @@ class YouTubeRoutingTest {
     }
 
     @Test fun aReplyIsInternalOnlyAndDoesNotMutateTheQuestion() {
-        val routing = YouTubeRouting()
+        val routing = DomainRouting()
         val query = query("youtube.com", 1)
         val original = query.copyOf()
         val question = requireNotNull(DnsQuestion.parse(query))
@@ -51,12 +51,12 @@ class YouTubeRoutingTest {
         assertEquals(0, readU16(reply, 10))
         assertEquals(0, getInt(reply, question.endOffset + 6))
         val address = getInt(reply, question.endOffset + 12)
-        assertTrue(YouTubeRouting.contains(address))
+        assertTrue(DomainRouting.contains(address))
         assertEquals("youtube.com", routing.hostFor(address))
     }
 
     @Test fun aaaaAndHttpsRecordsCannotExposeAnUnfilteredRealAddress() {
-        val routing = YouTubeRouting()
+        val routing = DomainRouting()
         listOf(28, 64, 65).forEach { type ->
             val query = query("youtube.com", type)
             val reply = routing.reply(query, requireNotNull(DnsQuestion.parse(query)))
@@ -67,7 +67,7 @@ class YouTubeRoutingTest {
     }
 
     @Test fun exhaustedInternalAddressesReturnFailureWithoutOverwritingTheOldMapping() {
-        val routing = YouTubeRouting(1)
+        val routing = DomainRouting(1)
         val first = requireNotNull(routing.addressFor("youtube.com"))
         val query = query("www.youtube.com", 1)
         val reply = routing.reply(query, requireNotNull(DnsQuestion.parse(query)))

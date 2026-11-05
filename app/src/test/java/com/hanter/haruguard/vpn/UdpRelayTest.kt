@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
-class YouTubeUdpConnectionTest {
+class UdpRelayTest {
     @Test(timeout = 8000) fun connectedUdpSocketPreservesBinaryDatagramsInBothDirections() = Harness().use { h ->
         val request = byteArrayOf(0, -1, 7, 1)
         h.connection.start(request)
@@ -57,7 +57,7 @@ class YouTubeUdpConnectionTest {
         val frames = LinkedBlockingQueue<ByteArray>()
         val finished = CountDownLatch(1)
         val closeCount = AtomicInteger()
-        val connection = YouTubeUdpConnection(scope,
+        val connection = UdpRelay(scope,
             connect = { register -> DatagramSocket().also {
                 check(register(it))
                 it.connect(InetSocketAddress(InetAddress.getLoopbackAddress(), server.localPort))

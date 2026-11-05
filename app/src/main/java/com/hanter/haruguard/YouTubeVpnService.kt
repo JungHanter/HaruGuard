@@ -25,8 +25,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.hanter.haruguard.vpn.DnsTunnel
-import com.hanter.haruguard.vpn.YouTubeDnsFilter
-import com.hanter.haruguard.vpn.YouTubeRouting
+import com.hanter.haruguard.vpn.DnsPackets
+import com.hanter.haruguard.vpn.DomainRouting
+import com.hanter.haruguard.vpn.FilterPolicy
+import com.hanter.haruguard.vpn.FilterSettings
 import java.lang.ref.WeakReference
 
 /** 저장된 선택값과 구분하여 실제 VPN 연결 상태를 표시한다. */
@@ -41,6 +43,7 @@ object VpnRuntime {
 
 class YouTubeVpnService : VpnService() {
     private val preferences by lazy { VpnPreferences(this) }
+    private val filterPreferences by lazy { FilterPreferences(this) }
     private val handler = Handler(Looper.getMainLooper())
     private val reconnectHandler = Handler(Looper.getMainLooper())
     private var foreground = false
@@ -143,6 +146,7 @@ class YouTubeVpnService : VpnService() {
         val current = session.currentConnection as? DnsTunnel
         if (current != null) {
             if (!current.isHealthy) retryAfterFailure(getString(R.string.vpn_tunnel_stalled))
+            else current.applyPolicy(FilterPolicy(filterPreferences.load()))
         } else if (session.status.phase != VpnPhase.RECOVERING || networkReturned) {
             if (networkReturned) reconnect.stop()
             connectTunnel()
@@ -171,21 +175,22 @@ class YouTubeVpnService : VpnService() {
         var unclaimed: ParcelFileDescriptor? = null
         try {
             ensureForeground()
+            val policy = FilterPolicy(filterPreferences.load())
             val descriptor = Builder()
                 .setSession(getString(R.string.vpn_session))
                 .setConfigureIntent(openAppIntent())
                 .setMtu(32_767)
-                .addAddress(YouTubeDnsFilter.VPN_ADDRESS, 32)
-                .addDnsServer(YouTubeDnsFilter.DNS_ADDRESS)
-                .addRoute(YouTubeDnsFilter.DNS_ADDRESS, 32)
-                .addRoute(YouTubeRouting.ROUTE, YouTubeRouting.PREFIX)
+                .addAddress(DnsPackets.VPN_ADDRESS, 32)
+                .addDnsServer(DnsPackets.DNS_ADDRESS)
+                .addRoute(DnsPackets.DNS_ADDRESS, 32)
+                .addRoute(DomainRouting.ROUTE, DomainRouting.PREFIX)
                 // 일반 IPv6 통신을 유지하며 DNS의 AAAA 질의는 가상 DNS에서 처리한다.
                 .allowFamily(OsConstants.AF_INET6)
                 .establish() ?: error(getString(R.string.vpn_permission_missing))
             unclaimed = descriptor
             lateinit var current: DnsTunnel
             current = DnsTunnel(
-                this, descriptor,
+                this, descriptor, policy,
                 onBlocked = { mainExecutor.execute { session.recordBlocked(current) } },
                 onResolveError = { mainExecutor.execute { session.recordResolveError(current) } },
                 onFailure = { error -> mainExecutor.execute {
@@ -356,6 +361,16 @@ class YouTubeVpnService : VpnService() {
         private const val NOTIFICATION_ID = 1
         private const val HEALTH_CHECK_MS = 5_000L
         private var runningService: WeakReference<YouTubeVpnService>? = null
+
+        /** 부모의 VPN OFF 선택을 바꾸거나 새 서비스를 시작하지 않고 실행 중 정책만 교체한다. */
+        internal fun applyFilterSettings(settings: FilterSettings): Boolean {
+            val service = runningService?.get() ?: return false
+            if (!service.foreground || service.destroyed) return false
+            val tunnel = service.session.currentConnection as? DnsTunnel ?: return false
+            if (!tunnel.isHealthy) return false
+            tunnel.applyPolicy(FilterPolicy(settings))
+            return true
+        }
 
         /** 같은 프로세스의 접근성 감시·알람은 실행 중인 FGS를 중복 시작하지 않는다. */
         internal fun checkRunningService(): Boolean {

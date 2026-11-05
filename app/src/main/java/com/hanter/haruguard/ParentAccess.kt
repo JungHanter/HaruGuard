@@ -79,6 +79,8 @@ internal object ParentAccess {
 
     fun isAuthenticated(): Boolean = isScreenAvailable() && session.isAuthenticated()
 
+    fun authenticationRemainingMillis(): Long = if (isScreenAvailable()) session.remainingMillis() else 0
+
     fun isMaintenanceOpen(): Boolean = maintenanceRemainingMillis() > 0
 
     fun maintenanceRemainingMillis(): Long =

@@ -118,12 +118,13 @@ internal class ParentSession(private val elapsedRealtime: () -> Long) {
     @Synchronized fun authenticate(expectedGeneration: Long): Boolean {
         if (generation != expectedGeneration) return false
         authenticatedUntil = elapsedRealtime() + AUTH_DURATION_MILLIS
+        maintenanceUntil = 0
         return true
     }
 
     @Synchronized fun isAuthenticated(): Boolean {
         val now = elapsedRealtime()
-        // 부모가 연 5분 동안은 설정 앱을 다녀와도 앱 내부 설정을 계속 사용할 수 있다.
+        // 명시적 설정 개방 중에는 최초 인증의 남은 시간 안에서 설정 앱을 다녀올 수 있다.
         return authenticatedUntil > now || maintenanceUntil > now
     }
 
@@ -133,11 +134,13 @@ internal class ParentSession(private val elapsedRealtime: () -> Long) {
     @Synchronized fun openMaintenance(): Boolean {
         val now = elapsedRealtime()
         if (authenticatedUntil <= now && maintenanceUntil <= now) return false
-        // 설정 버튼을 다시 눌러도 이미 시작한 개방 시간을 연장하지 않는다.
-        if (maintenanceUntil <= now) maintenanceUntil = now + MAINTENANCE_DURATION_MILLIS
-        authenticatedUntil = maintenanceUntil
+        // 늦게 설정을 열거나 다른 설정으로 이동해도 최초 인증 종료 시각을 넘기지 않는다.
+        if (maintenanceUntil <= now) maintenanceUntil = authenticatedUntil
         return true
     }
+
+    @Synchronized fun remainingMillis(): Long =
+        (maxOf(authenticatedUntil, maintenanceUntil) - elapsedRealtime()).coerceAtLeast(0)
 
     @Synchronized fun maintenanceRemainingMillis(): Long =
         (maintenanceUntil - elapsedRealtime()).coerceAtLeast(0)
@@ -153,7 +156,7 @@ internal class ParentSession(private val elapsedRealtime: () -> Long) {
     }
 
     companion object {
-        const val AUTH_DURATION_MILLIS = 2 * 60_000L
+        const val AUTH_DURATION_MILLIS = 5 * 60_000L
         const val MAINTENANCE_DURATION_MILLIS = 5 * 60_000L
     }
 }

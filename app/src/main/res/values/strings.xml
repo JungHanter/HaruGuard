@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">HaruGuard</string>
     <string name="app_version">버전 %1$s</string>
-    <string name="p0_title">HaruGuard P0b</string>
+    <string name="p0_title">HaruGuard</string>
     <string name="p0_description">VPN 실행 유지와 부모 설정 보호를 시험합니다.</string>
     <string name="admin_label">HaruGuard 앱 보호</string>
     <string name="admin_description">삭제 전에 관리자 해제를 요구하고 강제 중지 경로를 제한하는 보조 기능입니다. 초기화·암호·카메라 정책은 사용하지 않습니다.</string>
@@ -10,20 +10,18 @@
     <string name="accessibility_description">부모가 보호를 켜면 HaruGuard의 앱 관리·실행 권한과 관리자·접근성·VPN·초기화 화면에서 안내를 띄우고 이전 화면으로 돌아갑니다. 개발자옵션이 꺼져 있으면 활성화 경로도 보호하며, 이 경로는 5분 개방 중에도 설정 보호를 꺼야 사용할 수 있습니다. Wi-Fi·밝기·소리 같은 일반 설정은 허용합니다. 앱을 구분할 수 없는 상세 화면이나 목록에서 바로 변경하는 경우에는 해당 화면·목록을 보호합니다. 설정, 시스템 대화상자와 홈 메뉴의 내용만 판정에 사용하며 저장하거나 전송하지 않습니다. 부모는 PIN으로 보호 설정을 5분간 열거나 보호를 해제할 수 있습니다. 접근성 단축키는 설정하지 마세요.</string>
     <string name="setting_blocked_notice">HaruGuard에 의해 설정이 차단되었습니다.</string>
     <string name="parent_required">부모 인증이 필요합니다</string>
-    <string name="youtube_access_title">모든 앱의 YouTube 접근 허용</string>
-    <string name="youtube_access_description">ON: HaruGuard VPN 필터 중지\nOFF: YouTube 도메인 연결을 확인해 공식 YouTube 앱만 허용</string>
     <string name="other_vpn_active">다른 VPN이 실행 중입니다. 해당 VPN을 끈 뒤 다시 시험해 주세요.</string>
-    <string name="vpn_channel">YouTube 시험 VPN</string>
-    <string name="vpn_session">HaruGuard YouTube 시험</string>
+    <string name="vpn_channel">HaruGuard VPN 필터</string>
+    <string name="vpn_session">HaruGuard 도메인 필터</string>
     <string name="vpn_notification_title">HaruGuard VPN 필터</string>
-    <string name="vpn_notification_text">YouTube 도메인 연결은 공식 앱에서만 허용합니다.</string>
+    <string name="vpn_notification_text">저장된 서비스·도메인 차단 규칙을 적용합니다.</string>
     <string name="vpn_permission_missing">VPN 연결 권한이 없습니다.</string>
     <string name="vpn_permission_cancelled">VPN 연결 승인이 취소되었습니다. 필터는 시작하지 않았습니다.</string>
     <string name="vpn_failed">VPN 시작·처리 실패: %1$s</string>
     <string name="vpn_stop_failed">VPN 중지 요청 실패: %1$s. 다시 시도해 주세요.</string>
     <string name="vpn_revoked">시스템에서 VPN 연결이 해제되었습니다. 필터가 중지되었습니다.</string>
     <string name="vpn_starting">VPN 시작 중…</string>
-    <string name="vpn_filtering">VPN 실행 중 · YouTube 도메인은 공식 앱만 허용</string>
+    <string name="vpn_filtering">VPN 실행 중 · 저장된 필터 적용</string>
     <string name="vpn_stopping">VPN 중지 중…</string>
     <string name="vpn_recovering">VPN 연결 복구 중 · 복구 전에는 차단되지 않습니다.</string>
     <string name="vpn_recovery_detail">%1$d초 뒤 연결을 다시 시도합니다. %2$s</string>
@@ -31,7 +29,7 @@
     <string name="vpn_error">VPN 오류 · 필터가 적용되지 않습니다.</string>
     <string name="vpn_stopped">VPN 중지됨</string>
     <string name="vpn_query_counts">차단한 연결: %1$d · 처리 실패: %2$d</string>
-    <string name="vpn_test_note">시스템 Private DNS 설정은 변경하지 않습니다. 일반 DNS로 확인한 YouTube 도메인 연결을 앱별로 검사하며, 자체 암호화 DNS·기존 연결의 우회 차단은 보장하지 않습니다.</string>
+    <string name="vpn_test_note">시스템 Private DNS 설정은 변경하지 않습니다. 일반 DNS로 확인한 서비스 도메인은 앱별로, 전역 목록은 모든 앱에서 차단하며, 자체 암호화 DNS·기존 연결의 우회 차단은 보장하지 않습니다.</string>
     <string name="open_vpn_settings">VPN 설정 열기</string>
     <string name="p0_security_note">부모가 VPN을 끄면 자동 복구도 중지합니다. 시스템 강제 중지·안전모드·접근성 권한 상실 후의 자동 복구는 보장할 수 없습니다.</string>
 </resources>

@@ -26,27 +26,30 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Android 10의 DNS 소켓은 AID_DNS 소유일 수 있으므로 DNS 요청의 UID로 예외를 주지 않는다.
  * https://developer.android.com/reference/android/net/ConnectivityManager#getConnectionOwnerUid(int,java.net.InetSocketAddress,java.net.InetSocketAddress)
  */
-internal class YouTubeConnections(
+internal class DomainConnections(
     private val service: VpnService,
-    private val routing: YouTubeRouting,
+    private val routing: DomainRouting,
+    initialPolicy: FilterPolicy,
     private val write: (ByteArray) -> Unit,
     private val onBlocked: () -> Unit,
     private val onError: () -> Unit,
 ) : Closeable {
+    @Volatile var policy = initialPolicy
+        private set
     private val connectivity = service.getSystemService(ConnectivityManager::class.java)
     // 읽기와 쓰기가 서로 대기해도 진행하도록 전용 IO 실행기를 사용한다. 연결 수는 아래에서 제한한다.
     private val dispatcher = ThreadPoolExecutor(0, MAX_CONNECTIONS * 3, 30, TimeUnit.SECONDS,
-        SynchronousQueue(), { task -> Thread(task, "haruguard-youtube-io").apply { isDaemon = true } }
+        SynchronousQueue(), { task -> Thread(task, "haruguard-filter-io").apply { isDaemon = true } }
     ).asCoroutineDispatcher()
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val closed = AtomicBoolean()
-    private val tcp = ConcurrentHashMap<ConnectionKey, YouTubeTcpConnection>()
-    private val udp = ConcurrentHashMap<ConnectionKey, YouTubeUdpConnection>()
+    private val tcp = ConcurrentHashMap<ConnectionKey, TcpRelay>()
+    private val udp = ConcurrentHashMap<ConnectionKey, UdpRelay>()
 
     @Synchronized fun accept(bytes: ByteArray, length: Int) {
         if (closed.get()) return
         val ip = IpPacket.parse(bytes, length) ?: return
-        if (!YouTubeRouting.contains(ip.destIp)) return
+        if (!DomainRouting.contains(ip.destIp)) return
         when (ip.protocol) {
             6 -> {
                 val packet = TcpPacket.parse(bytes, ip.headerLength, ip.length - ip.headerLength) ?: return
@@ -60,8 +63,8 @@ internal class YouTubeConnections(
                     if (host == null) onBlocked() else onError()
                     reset(key, packet, payload.size); return
                 }
-                lateinit var connection: YouTubeTcpConnection
-                connection = YouTubeTcpConnection(key, scope,
+                lateinit var connection: TcpRelay
+                connection = TcpRelay(key, scope,
                     connect = { register -> connectTcp(host, key.destPort, register) },
                     write = write, now = SystemClock::elapsedRealtime,
                     onFinished = { tcp.remove(it, connection) })
@@ -85,8 +88,8 @@ internal class YouTubeConnections(
                 if (tcp.size + udp.size >= MAX_CONNECTIONS) {
                     onError(); write(ConnectionPackets.unreachable(bytes, ip)); return
                 }
-                lateinit var connection: YouTubeUdpConnection
-                connection = YouTubeUdpConnection(scope,
+                lateinit var connection: UdpRelay
+                connection = UdpRelay(scope,
                     connect = { register -> connectUdp(host, key.destPort, register) },
                     mayReceive = { authorizedHost(key, 17) == host },
                     write = { write(ConnectionPackets.udp(key, it)) }, now = SystemClock::elapsedRealtime,
@@ -99,16 +102,26 @@ internal class YouTubeConnections(
 
     private fun authorizedHost(key: ConnectionKey, protocol: Int): String? {
         val host = routing.hostFor(key.destIp) ?: return null
-        val uid = runCatching {
+        return host.takeIf { policy.mayConnect(host, ownerUid = { runCatching {
             connectivity.getConnectionOwnerUid(protocol,
                 InetSocketAddress(InetAddress.getByAddress(key.sourceIp.addressBytes()), key.sourcePort),
                 InetSocketAddress(InetAddress.getByAddress(key.destIp.addressBytes()), key.destPort))
-        }.getOrDefault(-1)
-        @Suppress("DEPRECATION")
-        val youtubeUid = runCatching {
-            service.packageManager.getApplicationInfo(YouTubeDnsFilter.YOUTUBE_PACKAGE, 0).uid
-        }.getOrNull()
-        return host.takeIf { YouTubeRouting.mayConnect(host, uid, youtubeUid) }
+        }.getOrDefault(-1) }, packageUid = { packageName ->
+            // 대상 패키지만 조회하고 설치/삭제 뒤 오래된 UID를 재사용하지 않는다.
+            @Suppress("DEPRECATION")
+            runCatching { service.packageManager.getApplicationInfo(packageName, 0).uid }.getOrNull()
+        }) }
+    }
+
+    @Synchronized fun applyPolicy(next: FilterPolicy) {
+        if (closed.get() || policy.settings == next.settings) return
+        policy = next
+        // 정책 갱신 시 관리 중인 흐름은 닫아 이전 허용값이 계속 사용되지 않게 한다.
+        // 내부 주소↔호스트 대응은 보존해 앱의 캐시가 다른 호스트로 바뀌지 않게 한다.
+        tcp.values.toList().forEach { it.finish() }
+        udp.values.toList().forEach { it.close() }
+        tcp.clear()
+        udp.clear()
     }
 
     private fun reset(key: ConnectionKey, packet: TcpPacket, payloadLength: Int) {
@@ -137,7 +150,7 @@ internal class YouTubeConnections(
             }
         }
         onError()
-        throw IOException("YouTube 서버 연결 실패", failure)
+        throw IOException("필터 대상 서버 연결 실패", failure)
     }
 
     private fun physicalNetwork(): Network? {

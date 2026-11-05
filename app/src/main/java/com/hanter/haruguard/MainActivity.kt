@@ -28,6 +28,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.hanter.haruguard.ui.theme.HaruGuardTheme
+import com.hanter.haruguard.vpn.DomainGroup
+import com.hanter.haruguard.vpn.FilterService
+import com.hanter.haruguard.vpn.FilterSettings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -37,6 +40,7 @@ internal data class ParentUiState(
     val configured: Boolean = false,
     val authenticated: Boolean = false,
     val maintenanceMs: Long = 0,
+    val authenticationMs: Long = 0,
     val retryMs: Long = 0,
     val filteringRequested: Boolean = false,
     val protection: Boolean = false,
@@ -60,6 +64,10 @@ class MainActivity : ComponentActivity() {
     private var consentRequestedByParent = false
     private var consentOpenedMaintenance = false
     private val updater by lazy { AppUpdater.get(this) }
+    private val filterPreferences by lazy { FilterPreferences(this) }
+    private var filterSettings by mutableStateOf<FilterSettings?>(null)
+    private var filterError by mutableStateOf<String?>(null)
+    private var installedServices by mutableStateOf<Set<FilterService>>(emptySet())
 
     private val updateSourcePermission = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         // 설정 화면의 결과 코드 대신 실제 허용 상태를 읽는다. 복귀만으로 설치를 자동 실행하지 않는다.
@@ -76,7 +84,7 @@ class MainActivity : ComponentActivity() {
         consentRequestedByParent = false
         if (result.resultCode == Activity.RESULT_OK && authorized) startFiltering()
         else feedback = if (authorized) getString(R.string.vpn_permission_cancelled) else "부모 인증 후 VPN을 다시 켜 주세요."
-        // VPN 동의 때문에 새로 연 개방만 닫고, 부모가 이미 열어 둔 5분은 유지한다.
+        // VPN 동의 때문에 새로 연 개방만 닫고, 부모가 이미 열어 둔 개방의 남은 시간은 유지한다.
         if (consentOpenedMaintenance) ParentAccess.lock()
         consentOpenedMaintenance = false
         refreshUi()
@@ -104,7 +112,18 @@ class MainActivity : ComponentActivity() {
                     update = updater.state,
                     onUpdateDownload = { if (requireParent()) updater.download(it) },
                     onUpdateCancel = { if (requireParent()) updater.cancel() },
-                    onUpdateInstall = ::installUpdate)
+                    onUpdateInstall = ::installUpdate,
+                    filters = filterSettings, filterError = filterError, installedServices = installedServices,
+                    onRetryFilters = { if (requireParent()) refreshFilters() },
+                    onServiceFilter = { service, enabled -> changeFilters { settings ->
+                        settings.copy(enabledServices = if (enabled) settings.enabledServices + service else settings.enabledServices - service)
+                    } },
+                    onGroupFilter = { group, enabled -> changeFilters { settings -> when (group) {
+                        DomainGroup.KAKAO -> settings.copy(kakaoEnabled = enabled)
+                        DomainGroup.NAVER -> settings.copy(naverEnabled = enabled)
+                        DomainGroup.CUSTOM -> settings
+                    } } },
+                    onDomainEdit = ::editDomain)
             }
         }
         lifecycleScope.launch {
@@ -121,12 +140,13 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         refreshUi()
+        refreshFilters()
         if (ui.filteringRequested) VpnRecovery.request(this)
     }
 
     override fun onStop() {
-        // 일반 인증은 앱 이탈 시 끝내되, 부모가 연 5분 동안은 재입력 없이 돌아온다.
-        ParentAccess.lockAuthenticationOnly()
+        // 일반 인증은 앱 이탈 시 끝내되, 명시적 설정 개방 중에는 남은 인증 시간 안에 돌아온다.
+        if (!isChangingConfigurations) ParentAccess.lockAuthenticationOnly()
         recoveryCode = null
         refreshUi()
         super.onStop()
@@ -137,6 +157,7 @@ class MainActivity : ComponentActivity() {
             ui = ParentUiState(
                 configured = ParentAccess.hasPin(this), authenticated = ParentAccess.isAuthenticated(),
                 maintenanceMs = ParentAccess.maintenanceRemainingMillis(), retryMs = retry,
+                authenticationMs = ParentAccess.authenticationRemainingMillis(),
                 filteringRequested = VpnPreferences(this).filteringRequested,
                 protection = ParentAccess.isProtectionEnabled(this),
                 accessibilityEnabled = ProtectionAccessibilityService.isEnabled(this),
@@ -146,6 +167,7 @@ class MainActivity : ComponentActivity() {
                 exactAlarm = Build.VERSION.SDK_INT < 31 || getSystemService(AlarmManager::class.java).canScheduleExactAlarms(),
                 notifications = NotificationManagerCompat.from(this).areNotificationsEnabled(),
             )
+            if (!ui.authenticated) recoveryCode = null
         }.onFailure { feedback = "상태 확인 실패: ${it.javaClass.simpleName}" }
     }
 
@@ -154,6 +176,45 @@ class MainActivity : ComponentActivity() {
         feedback = "부모 PIN으로 먼저 인증해 주세요."
         refreshUi()
         return false
+    }
+
+    private fun refreshFilters() {
+        runCatching { filterPreferences.load() }
+            .onSuccess { filterSettings = it; filterError = null }
+            .onFailure { filterSettings = null; filterError = "차단 설정을 읽지 못했습니다. 기존 저장값을 확인한 뒤 다시 시도하세요." }
+        installedServices = FilterService.entries.filter { service ->
+            @Suppress("DEPRECATION")
+            runCatching { packageManager.getApplicationInfo(service.packageName, 0) }.isSuccess
+        }.toSet()
+    }
+
+    private fun changeFilters(change: (FilterSettings) -> FilterSettings): String? {
+        if (!requireParent() || busy || awaitingConsent) return "부모 인증 상태를 확인해 주세요."
+        return try {
+            val next = change(filterPreferences.load())
+            if (!requireParent()) return "부모 인증이 만료되었습니다."
+            filterPreferences.save(next)
+            filterSettings = next
+            filterError = null
+            val applied = runCatching { YouTubeVpnService.applyFilterSettings(next) }.getOrDefault(false)
+            feedback = if (applied) "차단 설정을 저장하고 적용했습니다. 재생 중인 서비스는 다시 연결될 수 있습니다."
+                else "차단 설정을 저장했습니다. VPN이 연결되면 적용됩니다."
+            null
+        } catch (error: Exception) {
+            val message = error.message ?: "차단 설정을 저장하지 못했습니다."
+            feedback = message
+            message
+        }
+    }
+
+    /** 추가/수정/삭제는 같은 저장 경로를 거치며 인증 만료나 실패 시 편집 전 목록을 유지한다. */
+    private fun editDomain(group: DomainGroup, original: String?, replacement: String?): String? = changeFilters { settings ->
+        val current = settings.domains(group)
+        require(original == null || original in current) { "목록이 변경되었습니다. 화면을 다시 열어 주세요." }
+        val domain = replacement?.let(filterPreferences::validateDomain)
+        require(domain == null || domain == original || domain !in current) { "이미 등록된 도메인입니다." }
+        val revised = current - setOfNotNull(original) + setOfNotNull(domain)
+        settings.withDomains(group, revised)
     }
 
     private fun authenticate(action: ParentAuthAction, pin: String, confirmation: String, recovery: String) {
@@ -335,7 +396,7 @@ class MainActivity : ComponentActivity() {
                 if (!packageManager.canRequestPackageInstalls()) {
                     updateSourcePermission.launch(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                         "package:$packageName".toUri()))
-                    feedback = "HaruGuard의 ‘이 출처 허용’을 켠 뒤 돌아와 ‘설치하기’를 다시 누르세요. 부모 설정은 최대 5분간 개방됩니다."
+                    feedback = "HaruGuard의 ‘이 출처 허용’을 켠 뒤 돌아와 ‘설치하기’를 다시 누르세요. 설정 접근은 현재 부모 인증의 남은 시간 동안 허용됩니다."
                 } else {
                     val uri = FileProvider.getUriForFile(this@MainActivity, "$packageName.updates", file)
                     startActivity(Intent(Intent.ACTION_VIEW).apply {

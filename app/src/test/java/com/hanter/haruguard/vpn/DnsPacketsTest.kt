@@ -9,17 +9,17 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class YouTubeDnsFilterTest {
+class DnsPacketsTest {
     @Test fun blocksYouTubePagesVideoCdnAndApi() {
         listOf("youtube.com", "m.youtube.com", "youtu.be", "www.youtube-nocookie.com",
             "rr1---sn.example.googlevideo.com", "i.ytimg.com", "youtubei.googleapis.com",
-            "YOUTUBE.COM.").forEach { assertTrue(it, YouTubeDnsFilter.isBlocked(it)) }
+            "YOUTUBE.COM.").forEach { assertTrue(it, (FilterPolicy(FilterSettings()).decision(it) is DomainDecision.OfficialApps)) }
     }
 
     @Test fun keepsUnrelatedGoogleServicesAndDeceptiveSuffixesWorking() {
         listOf("google.com", "accounts.google.com", "googleapis.com", "photos.googleapis.com",
             "notyoutube.com", "youtube.com.example.org", "googlevideo.com.evil.test")
-            .forEach { assertFalse(it, YouTubeDnsFilter.isBlocked(it)) }
+            .forEach { assertFalse(it, (FilterPolicy(FilterSettings()).decision(it) is DomainDecision.OfficialApps)) }
     }
 
     @Test fun parsesAAndAaaaQuestions() {
