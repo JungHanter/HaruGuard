@@ -22,6 +22,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.hanter.haruguard.vpn.DomainGroup
@@ -83,6 +84,7 @@ internal fun DomainListScreen(
                 }
                 Text("도메인만 입력하세요. 예: dcinside.com\nhttp://, https://, /경로는 넣지 마세요. 루트와 모든 하위 도메인을 HTTP·HTTPS 구분 없이 차단합니다.", style = MaterialTheme.typography.bodySmall)
                 Text("공식 앱에도 예외 없이 적용됩니다. VPN이 켜져 있어야 하며 자체 DNS·이미 열린 연결·저장된 영상은 차단되지 않을 수 있습니다.", style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.filter_reconnect_hint), style = MaterialTheme.typography.bodySmall)
                 Button(onClick = { error = null; editing = DomainEdit(null) }, enabled = !busy && domains.size < DomainInput.MAX_DOMAINS) { Text("도메인 추가") }
                 Text("${domains.size} / ${DomainInput.MAX_DOMAINS}개" + if (!settings.enabled(group)) " · 현재 목록 차단 꺼짐" else "")
                 if (domains.isEmpty()) Text("등록된 도메인이 없습니다. 이 목록에서 차단하는 주소가 없습니다.")

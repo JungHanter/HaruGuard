@@ -32,4 +32,5 @@
     <string name="vpn_test_note">시스템 Private DNS 설정은 변경하지 않습니다. 일반 DNS로 확인한 서비스 도메인은 앱별로, 전역 목록은 모든 앱에서 차단하며, 자체 암호화 DNS·기존 연결의 우회 차단은 보장하지 않습니다.</string>
     <string name="open_vpn_settings">VPN 설정 열기</string>
     <string name="p0_security_note">부모가 VPN을 끄면 자동 복구도 중지합니다. 시스템 강제 중지·안전모드·접근성 권한 상실 후의 자동 복구는 보장할 수 없습니다.</string>
+    <string name="filter_reconnect_hint">변경 내용이 바로 반영되지 않으면 메인 메뉴에서 VPN 필터를 껐다 다시 켜 주세요.</string>
 </resources>

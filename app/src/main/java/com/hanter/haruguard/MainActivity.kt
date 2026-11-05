@@ -197,8 +197,9 @@ class MainActivity : ComponentActivity() {
             filterSettings = next
             filterError = null
             val applied = runCatching { YouTubeVpnService.applyFilterSettings(next) }.getOrDefault(false)
-            feedback = if (applied) "차단 설정을 저장하고 적용했습니다. 재생 중인 서비스는 다시 연결될 수 있습니다."
-                else "차단 설정을 저장했습니다. VPN이 연결되면 적용됩니다."
+            feedback = (if (applied) "차단 설정을 저장하고 VPN 정책을 갱신했습니다."
+                else "차단 설정을 저장했습니다. VPN이 연결되면 적용됩니다.") +
+                "\n" + getString(R.string.filter_reconnect_hint)
             null
         } catch (error: Exception) {
             val message = error.message ?: "차단 설정을 저장하지 못했습니다."
