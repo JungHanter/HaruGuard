@@ -136,7 +136,7 @@ private fun ParentControls(
     var showRecoveryWarning by remember { mutableStateOf(false) }
     Text("부모 관리", style = MaterialTheme.typography.titleLarge)
     Text("일반 인증은 2분간 유효하며 앱을 나가면 다시 PIN을 요구합니다. 부모 설정 개방 5분 동안은 앱을 다녀와도 PIN을 묻지 않습니다. ‘지금 잠그기’·5분 만료·화면 잠금 시 다시 잠깁니다.", style = MaterialTheme.typography.bodySmall)
-    ToggleCard("VPN 필터 켜기", "켜 두면 종료·오류 후 복구를 시도합니다. 기존 YouTube 시험 필터를 사용합니다.",
+    ToggleCard("VPN 필터 켜기", "YouTube 도메인 연결은 공식 YouTube 앱에서만 허용합니다. 켜 두면 종료·오류 후 복구를 시도합니다.",
         state.filteringRequested, !busy && vpn.phase != VpnPhase.STARTING && vpn.phase != VpnPhase.STOPPING, onVpn)
     if (state.filteringRequested && vpn.phase == VpnPhase.ERROR) {
         Button(onClick = { onVpn(true) }, enabled = !busy) { Text("VPN 승인·연결 다시 시도") }
@@ -160,7 +160,7 @@ private fun ParentControls(
     StatusButton("3. 항상 켜진 VPN", when (alwaysOn) { true -> "켜짐"; false -> "꺼짐"; null -> "VPN 실행 후 확인" }, busy) { onSettings(ParentSetting.VPN) }
     Text("VPN 설정에서 HaruGuard의 ‘Always-on VPN’을 켜세요. 현재 시험 필터에서는 ‘Block connections without VPN’은 끄세요.",
         style = MaterialTheme.typography.bodySmall)
-    if (lockdown == true) Text("VPN 외 연결 차단이 켜져 있습니다. 제외한 YouTube 앱 통신도 막힐 수 있습니다.", color = MaterialTheme.colorScheme.error)
+    if (lockdown == true) Text("VPN 외 연결 차단이 켜져 있습니다. 현재 필터에서 일반 사이트 통신이 막힐 수 있으므로 이 옵션은 꺼 주세요.", color = MaterialTheme.colorScheme.error)
     StatusButton("4. 배터리 최적화 예외", if (state.batteryExempt) "허용됨" else "설정 필요", busy) { onSettings(ParentSetting.BATTERY) }
     StatusButton("5. 정확한 알람", if (state.exactAlarm) "허용됨" else "미허용 · 복구가 늦어질 수 있음", busy) { onSettings(ParentSetting.EXACT_ALARM) }
     StatusButton("6. 상태 알림 (선택)", if (state.notifications) "허용됨" else "꺼짐 · VPN 실행 가능", busy) { onSettings(ParentSetting.NOTIFICATIONS) }

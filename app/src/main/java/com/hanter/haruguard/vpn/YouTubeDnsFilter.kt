@@ -2,7 +2,7 @@ package com.hanter.haruguard.vpn
 
 import java.util.Locale
 
-/** P0 DNS filter. It deliberately does not inspect HTTPS or collect browsing history. */
+/** YouTube 도메인 판정. 실제 연결 허용은 YouTubeRouting의 앱 UID 정책으로 결정한다. */
 object YouTubeDnsFilter {
     const val YOUTUBE_PACKAGE = "com.google.android.youtube"
     const val VPN_ADDRESS = "10.203.0.1"

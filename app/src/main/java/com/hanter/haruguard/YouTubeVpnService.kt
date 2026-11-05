@@ -26,6 +26,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.hanter.haruguard.vpn.DnsTunnel
 import com.hanter.haruguard.vpn.YouTubeDnsFilter
+import com.hanter.haruguard.vpn.YouTubeRouting
 import java.lang.ref.WeakReference
 
 /** 저장된 선택값과 구분하여 실제 VPN 연결 상태를 표시한다. */
@@ -177,9 +178,9 @@ class YouTubeVpnService : VpnService() {
                 .addAddress(YouTubeDnsFilter.VPN_ADDRESS, 32)
                 .addDnsServer(YouTubeDnsFilter.DNS_ADDRESS)
                 .addRoute(YouTubeDnsFilter.DNS_ADDRESS, 32)
+                .addRoute(YouTubeRouting.ROUTE, YouTubeRouting.PREFIX)
                 // 일반 IPv6 통신을 유지하며 DNS의 AAAA 질의는 가상 DNS에서 처리한다.
                 .allowFamily(OsConstants.AF_INET6)
-                .addDisallowedApplication(YouTubeDnsFilter.YOUTUBE_PACKAGE)
                 .establish() ?: error(getString(R.string.vpn_permission_missing))
             unclaimed = descriptor
             lateinit var current: DnsTunnel
@@ -200,11 +201,7 @@ class YouTubeVpnService : VpnService() {
             updateNotification()
         } catch (error: Exception) {
             runCatching { unclaimed?.close() }
-            if (error is android.content.pm.PackageManager.NameNotFoundException) {
-                finishFiltering(getString(R.string.youtube_missing), withdrawRequest = true)
-            } else {
-                retryAfterFailure(getString(R.string.vpn_failed, error.javaClass.simpleName))
-            }
+            retryAfterFailure(getString(R.string.vpn_failed, error.javaClass.simpleName))
         }
     }
 

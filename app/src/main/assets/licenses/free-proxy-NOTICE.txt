@@ -1,0 +1,11 @@
+HaruGuard includes a modified TCP session implementation based on FreeProxy.
+
+FreeProxy by xVanTuring and contributors
+https://github.com/xVanTuring/free-proxy
+Reference commit: f13432fe12866fa6f66b150f25c2b1ec0549eb77
+Reference file: app/src/main/java/tech/xvanturing/freeproxy/vpn/TcpSession.kt
+Licensed under the Apache License, Version 2.0 (see free-proxy-LICENSE.txt).
+
+Modified in HaruGuard on 2026-11-05: direct protected sockets in place of a proxy,
+domain-specific routing and UID authorization, bounded buffers and connections,
+TCP handshake/window/retransmission/close handling, and removal of traffic logging.

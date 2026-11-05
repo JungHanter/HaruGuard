@@ -1,26 +1,29 @@
 package com.hanter.haruguard.vpn
 
-import android.content.Context
 import android.net.ConnectivityManager
 import android.net.DnsResolver
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.net.VpnService
 import android.os.CancellationSignal
 import android.os.ParcelFileDescriptor
 import android.system.Os
 import android.system.OsConstants
+import android.system.ErrnoException
 import android.system.StructPollfd
 import java.io.Closeable
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** DNS 전용 분리 터널로, 허용 질의는 VPN 외부 네트워크의 시스템 resolver에 전달한다. */
+/** 일반 DNS와 YouTube 내부 주소만 처리하고, 나머지 통신은 물리 네트워크 경로를 유지한다. */
 internal class DnsTunnel(
-    context: Context,
+    private val context: VpnService,
     private val descriptor: ParcelFileDescriptor,
     private val onBlocked: () -> Unit,
     private val onResolveError: () -> Unit,
@@ -30,10 +33,14 @@ internal class DnsTunnel(
     @Suppress("DEPRECATION") // API 29를 지원한다. 새 생성자는 API 37부터 사용할 수 있다.
     private val resolver = DnsResolver.getInstance()
     private val closed = AtomicBoolean(false)
-    private val writeLock = Any()
+    private val faulted = AtomicBoolean(false)
+    private val writes = ArrayBlockingQueue<ByteArray>(256)
+    private val routing = YouTubeRouting()
+    private val connections = YouTubeConnections(context, routing, ::writePacket, onBlocked, onResolveError)
     private val pending = ConcurrentHashMap<Any, CancellationSignal>()
     @Volatile private var reader: Thread? = null
-    val isHealthy: Boolean get() = !closed.get() && reader?.isAlive == true
+    @Volatile private var writer: Thread? = null
+    val isHealthy: Boolean get() = !closed.get() && !faulted.get() && reader?.isAlive == true && writer?.isAlive == true
     private val callbacks = Executors.newFixedThreadPool(2) { task ->
         Thread(task, "haruguard-dns-reply").apply { isDaemon = true }
     }
@@ -48,7 +55,9 @@ internal class DnsTunnel(
     }
 
     fun start() {
+        writer = Thread(::writePackets, "haruguard-tun-write").apply { isDaemon = true }
         reader = Thread({ readPackets() }, "haruguard-dns-tun").apply { isDaemon = true }
+        writer!!.start()
         reader!!.start()
     }
 
@@ -59,7 +68,13 @@ internal class DnsTunnel(
             events = OsConstants.POLLIN.toShort()
         }
         try {
-            while (!closed.get()) {
+            var nextCheck = 0L
+            while (!closed.get() && !faulted.get()) {
+                val now = android.os.SystemClock.elapsedRealtime()
+                if (now >= nextCheck) {
+                    connections.tick()
+                    nextCheck = now + 1_000
+                }
                 if (Os.poll(arrayOf(poll), 1_000) == 0) continue
                 if (closed.get()) break
                 if (poll.revents.toInt() and OsConstants.POLLIN == 0) {
@@ -67,11 +82,15 @@ internal class DnsTunnel(
                 }
                 val size = Os.read(descriptor.fileDescriptor, buffer, 0, buffer.size)
                 if (size <= 0) throw IOException("VPN interface EOF")
-                val packet = DnsUdpPacket.parse(buffer, size) ?: continue
+                val packet = DnsUdpPacket.parse(buffer, size)
+                if (packet == null) {
+                    connections.accept(buffer, size)
+                    continue
+                }
                 val question = DnsQuestion.parse(packet.query) ?: continue
                 if (YouTubeDnsFilter.isBlocked(question.host)) {
-                    writeReply(packet, DnsReply.error(packet.query, question, DnsReply.NXDOMAIN))
-                    onBlocked()
+                    // 허용 여부는 공유될 수 있는 DNS 응답 대신 실제 연결의 UID로 결정한다.
+                    writeReply(packet, routing.reply(packet.query, question))
                 } else {
                     forward(packet, question)
                 }
@@ -146,13 +165,33 @@ internal class DnsTunnel(
     }
 
     private fun writeReply(packet: DnsUdpPacket, dnsMessage: ByteArray) {
-        if (closed.get()) return
+        writePacket(packet.response(dnsMessage))
+    }
+
+    private fun writePacket(packet: ByteArray) {
+        if (closed.get() || faulted.get()) return
+        // TUN 출력이 밀려도 연결 잠금/종료를 막지 않는다. TCP는 미확인 패킷을 재전송한다.
+        if (!writes.offer(packet)) onResolveError()
+    }
+
+    private fun writePackets() {
+        val poll = StructPollfd().apply {
+            fd = descriptor.fileDescriptor
+            events = OsConstants.POLLOUT.toShort()
+        }
         try {
-            val reply = packet.response(dnsMessage)
-            synchronized(writeLock) {
-                if (!closed.get()) {
-                    val written = Os.write(descriptor.fileDescriptor, reply, 0, reply.size)
-                    if (written != reply.size) throw IOException("Incomplete VPN packet write")
+            while (!closed.get() && !faulted.get()) {
+                val packet = writes.poll(1, TimeUnit.SECONDS) ?: continue
+                while (!closed.get() && !faulted.get()) {
+                    if (Os.poll(arrayOf(poll), 1_000) == 0) continue
+                    if (poll.revents.toInt() and OsConstants.POLLOUT == 0) throw IOException("VPN 출력 종료")
+                    try {
+                        val written = Os.write(descriptor.fileDescriptor, packet, 0, packet.size)
+                        if (written != packet.size) throw IOException("Incomplete VPN packet write")
+                        break
+                    } catch (error: ErrnoException) {
+                        if (error.errno != OsConstants.EAGAIN && error.errno != OsConstants.EINTR) throw error
+                    }
                 }
             }
         } catch (error: Exception) {
@@ -161,7 +200,9 @@ internal class DnsTunnel(
     }
 
     private fun fail(error: Exception) {
-        if (closeOnce()) onFailure(error)
+        if (closed.get() || !faulted.compareAndSet(false, true)) return
+        // 연결의 내부 잠금을 보유한 작업 스레드에서 다른 연결을 동시에 닫지 않는다.
+        context.mainExecutor.execute { if (closeOnce()) onFailure(error) }
     }
 
     override fun close() {
@@ -172,7 +213,10 @@ internal class DnsTunnel(
         if (!closed.compareAndSet(false, true)) return false
         pending.values.forEach { it.cancel() }
         pending.clear()
-        synchronized(writeLock) { descriptor.close() }
+        connections.close()
+        writes.clear()
+        writer?.interrupt()
+        descriptor.close()
         // 이미 예약된 취소 콜백은 마저 실행하되 닫힌 터널에 쓸 수는 없다.
         callbacks.shutdown()
         return true
