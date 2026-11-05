@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.AlarmManager
 import android.app.admin.DevicePolicyManager
 import android.content.Intent
+import android.content.ClipData
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
@@ -21,6 +22,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.FileProvider
+import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -56,6 +59,16 @@ class MainActivity : ComponentActivity() {
     private var recoveryCode by mutableStateOf<String?>(null)
     private var consentRequestedByParent = false
     private var consentOpenedMaintenance = false
+    private val updater by lazy { AppUpdater.get(this) }
+
+    private val updateSourcePermission = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        // 설정 화면의 결과 코드 대신 실제 허용 상태를 읽는다. 복귀만으로 설치를 자동 실행하지 않는다.
+        feedback = if (runCatching { packageManager.canRequestPackageInstalls() }.getOrDefault(false))
+            "설치 출처가 허용되었습니다. 아래 ‘설치하기’를 다시 눌러 주세요."
+        else "설치 출처가 허용되지 않았습니다. 부모가 Family Link·기기 정책과 ‘이 출처 허용’을 확인해 주세요."
+        updater.showInstallMessage(feedback.orEmpty())
+        refreshUi()
+    }
 
     private val vpnConsent = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         awaitingConsent = false
@@ -87,7 +100,11 @@ class MainActivity : ComponentActivity() {
                     onSettings = ::openParentSettings,
                     onLock = { ParentAccess.lock(); recoveryCode = null; refreshUi() },
                     onRecoveryCode = ::rotateRecoveryCode,
-                    onRemoveProtection = ::prepareRemoval)
+                    onRemoveProtection = ::prepareRemoval,
+                    update = updater.state,
+                    onUpdateDownload = { if (requireParent()) updater.download(it) },
+                    onUpdateCancel = { if (requireParent()) updater.cancel() },
+                    onUpdateInstall = ::installUpdate)
             }
         }
         lifecycleScope.launch {
@@ -303,6 +320,40 @@ class MainActivity : ComponentActivity() {
             "설정 보호를 끄고 VPN·관리자·접근성 해제를 요청했습니다. 아래 상태가 꺼짐으로 바뀌었는지 확인하세요. 기존 ADB 삭제 금지가 남아 있으면 별도 원복이 필요합니다."
         else "일부 해제를 완료하지 못했습니다: ${failures.joinToString()}. 부모 설정 개방 중 직접 확인해 주세요."
         refreshUi()
+    }
+
+    private fun installUpdate() {
+        if (!requireParent() || busy) return
+        busy = true
+        feedback = null
+        lifecycleScope.launch {
+            try {
+                val file = updater.fileForInstall() ?: return@launch
+                // 파일 검사 중 잠겼거나 앱을 떠났다면 외부 화면을 새로 띄우지 않는다.
+                if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) || !requireParent()) return@launch
+                if (!ParentAccess.openMaintenance()) return@launch
+                if (!packageManager.canRequestPackageInstalls()) {
+                    updateSourcePermission.launch(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        "package:$packageName".toUri()))
+                    feedback = "HaruGuard의 ‘이 출처 허용’을 켠 뒤 돌아와 ‘설치하기’를 다시 누르세요. 부모 설정은 최대 5분간 개방됩니다."
+                } else {
+                    val uri = FileProvider.getUriForFile(this@MainActivity, "$packageName.updates", file)
+                    startActivity(Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(uri, "application/vnd.android.package-archive")
+                        clipData = ClipData.newRawUri("HaruGuard update", uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    })
+                    feedback = "설치 화면에서 업데이트를 승인해 주세요. 취소했다면 ‘설치하기’로 다시 열 수 있습니다. 끝나면 ‘지금 잠그기’를 누르세요."
+                }
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                feedback = "설치 화면을 열지 못했습니다. Family Link·기기 설치 제한을 확인해 주세요. (${error.javaClass.simpleName})"
+            } finally {
+                busy = false
+                feedback?.let(updater::showInstallMessage)
+                refreshUi()
+            }
+        }
     }
 
     private fun authError(error: AuthError?): String = when (error) {
