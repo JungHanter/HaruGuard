@@ -15,7 +15,7 @@ class FilterPreferencesInstrumentedTest {
         try {
             assertEquals("xn--bcher-kva.de", preferences.validateDomain("Bücher.DE."))
             assertTrue(runCatching { preferences.validateDomain("co.kr") }.isFailure)
-            val changed = previous.copy(kakaoDomains = emptySet(), naverEnabled = false,
+            val changed = previous.copy(kakaoDomains = emptySet(), naverEnabled = false, adsEnabled = false, adDomains = emptySet(),
                 customDomains = setOf(preferences.validateDomain("YouTube.com")))
             preferences.save(changed)
             val reloaded = FilterPreferences(context).load()

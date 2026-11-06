@@ -96,7 +96,7 @@ class FilterPolicyTest {
         }
     }
 
-    @Test fun indexedLookupPreservesBoundariesAcrossFourFullLists() {
+    @Test fun indexedLookupPreservesBoundariesAcrossFiveFullLists() {
         var settings = defaults
         DomainGroup.entries.forEach { group ->
             settings = settings.withDomains(group, (0 until DomainInput.MAX_DOMAINS).map { "d$it.${group.name.lowercase()}.test" }.toSet())
@@ -113,5 +113,41 @@ class FilterPolicyTest {
         // 구체적인 앱 예외보다 상위 전역 차단이 우선해야 한다.
         val parent = FilterPolicy(defaults.copy(customDomains = setOf("googleapis.com")))
         assertEquals(DomainDecision.Block, parent.decision("youtubei.googleapis.com"))
+    }
+
+    @Test fun advertisingSwitchAndRemovedHostsLeaveOtherGroupsAndOfficialAppsIntact() {
+        val settings = defaults.copy(adDomains = setOf("youtube.com", "ad.example.org"),
+            customDomains = setOf("ad.example.org"))
+        val enabled = FilterPolicy(settings)
+        assertFalse(enabled.mayConnect("youtube.com", { error("광고 차단은 UID를 조회하지 않음") }, { 42 }))
+        assertEquals(DomainDecision.Block, enabled.decision("a.ad.example.org"))
+        val off = FilterPolicy(settings.copy(adsEnabled = false))
+        assertTrue(off.decision("youtube.com") is DomainDecision.OfficialApps)
+        assertEquals(DomainDecision.Block, off.decision("ad.example.org"))
+        assertEquals(DomainDecision.Block, off.decision("play.kakao.com"))
+        assertEquals(DomainDecision.Block, off.decision("thepiratebay.org"))
+        val empty = FilterPolicy(settings.copy(adDomains = emptySet(), customDomains = emptySet()))
+        assertEquals(DomainDecision.Direct, empty.decision("ad.example.org"))
+        assertTrue(empty.mayConnect("youtube.com", { 42 }, { 42 }))
+    }
+
+    @Test fun bundledAdvertisingHostsCoverDomesticAndInternationalAdsWithoutSharedServiceRoots() {
+        val policy = FilterPolicy(defaults)
+        listOf("pagead2.googlesyndication.com", "googleads.g.doubleclick.net", "ad.doubleclick.net",
+            "gfp.veta.naver.com", "ad.naver.com", "ad.cauly.co.kr", "adver.clickmon.co.kr",
+            "compass.adop.cc", "serve.popads.net", "adserver.juicyads.com").forEach { host ->
+            assertEquals(host, DomainDecision.Block, policy.decision(host))
+            assertEquals(DomainDecision.Block, policy.decision("child.$host"))
+            assertEquals(DomainDecision.Direct, policy.decision("$host.example.org"))
+        }
+        listOf("naver.com", "search.naver.com", "nid.naver.com", "apis.naver.com", "pstatic.net",
+            "google.com", "accounts.google.com", "gstatic.com", "kakao.com", "talk-pilsner.kakao.com",
+            "kakaocdn.net", "cloudfront.net", "unrelated.cloudfront.net", "akamaihd.net",
+            "oload.tv", "open.oneplus.net", "d.pixiv.org", "log.pipeline.datarize.io").forEach { host ->
+            assertEquals(host, DomainDecision.Direct, policy.decision(host))
+        }
+        FilterCatalog.adDefaults.forEach { host ->
+            assertEquals(host, DomainDecision.Direct, FilterPolicy(defaults.copy(adsEnabled = false)).decision(host))
+        }
     }
 }

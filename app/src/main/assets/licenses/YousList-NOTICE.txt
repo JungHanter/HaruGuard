@@ -1,0 +1,26 @@
+YousList selected advertising hosts
+
+Original work: YousList
+Authors: yous and the YousList contributors
+Project: https://github.com/yous/YousList
+Snapshot: 1c0d64b22b086b559bb66eee12c6ffc898ca9052
+Source files:
+https://github.com/yous/YousList/blob/1c0d64b22b086b559bb66eee12c6ffc898ca9052/hosts.txt
+https://github.com/yous/YousList/blob/1c0d64b22b086b559bb66eee12c6ffc898ca9052/youslist.txt
+Retrieved: 2026-11-06
+
+Licensed under Creative Commons Attribution 4.0 International (CC BY 4.0).
+https://creativecommons.org/licenses/by/4.0/
+Full license text is bundled in CC-BY-4.0.txt.
+
+Changes by HaruGuard:
+Selected 378 presumed advertising-only hosts: 358 from hosts.txt and
+20 individually reviewed advertising hostnames from URL rules in youslist.txt.
+Omitted 267 hosts.txt candidates with uncertain purposes, shared content/CDNs,
+or analytics-only roles. No HTML selectors, scriptlets, paths, site-specific
+conditions, or other executable/browser filtering rules are bundled or executed.
+These are global domain blocking candidates, not a full implementation of YousList.
+Kept each selected source hostname; did not broaden it to its parent domain.
+HaruGuard domain entries also cover subdomains of that exact entry.
+The editable defaults are initialized once; user removals remain removed.
+This use does not imply endorsement by YousList or its contributors.

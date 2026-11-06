@@ -121,6 +121,7 @@ class MainActivity : ComponentActivity() {
                     onGroupFilter = { group, enabled -> changeFilters { settings -> when (group) {
                         DomainGroup.KAKAO -> settings.copy(kakaoEnabled = enabled)
                         DomainGroup.NAVER -> settings.copy(naverEnabled = enabled)
+                        DomainGroup.ADS -> settings.copy(adsEnabled = enabled)
                         DomainGroup.P2P -> settings.copy(p2pEnabled = enabled)
                         DomainGroup.CUSTOM -> settings
                     } } },

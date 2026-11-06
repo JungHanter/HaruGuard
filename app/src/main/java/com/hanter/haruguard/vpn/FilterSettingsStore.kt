@@ -11,7 +11,7 @@ internal class FilterSettingsStore(
     fun load(): FilterSettings {
         val serialized = read() ?: return FilterSettings().also(::save)
         val settings = validated(FilterSettingsCodec.decode(serialized))
-        // 기존 목록은 보존하고 새 P2P 기본값만 최초 1회 확정한다.
+        // 기존 목록은 보존하고 이전 형식에 없던 그룹의 기본값만 최초 1회 확정한다.
         if (FilterSettingsCodec.needsUpgrade(serialized)) save(settings)
         return settings
     }

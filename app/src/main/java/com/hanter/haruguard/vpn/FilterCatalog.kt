@@ -67,6 +67,10 @@ internal object FilterCatalog {
     // https://m.naver.com/shorts/ (clipViewerHost 및 공개 스크립트, 2026-11-05)
     val naverDefaults = setOf("clip.naver.com", "clip-viewer.naver.com", "creatorhub-api.naver.com")
 
+    // YousList에서 광고 전용으로 추정되는 호스트만 선별한 고정 목록. 별도 파일에 출처/라이선스를 보존한다.
+    // https://github.com/yous/YousList
+    val adDefaults: Set<String> = AdDomains.defaults
+
     // 공개 Torrent 목록에서 대표 사이트·명시적 미러·트래커 호스트를 선별했다.
     // https://github.com/blocklistproject/Lists (고지는 assets/licenses에 포함, 2026-11-06)
     val p2pDefaults = setOf(

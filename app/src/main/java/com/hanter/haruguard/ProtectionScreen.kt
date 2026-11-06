@@ -42,18 +42,19 @@ import com.hanter.haruguard.vpn.FilterSettings
 
 internal enum class ParentPage(val title: String) {
     MENU("부모 관리"), FILTERS("VPN 필터 설정"), SETUP("처음 시작: 설정 보호 옵션"),
-    UPDATE("업데이트"), OTHER("기타"), KAKAO("카카오톡 숏폼"), NAVER("네이버 클립"), P2P("P2P 차단"), CUSTOM("사용자 지정 차단 도메인");
+    UPDATE("업데이트"), OTHER("기타"), KAKAO("카카오톡 숏폼"), NAVER("네이버 클립"), ADS("광고 차단"), P2P("P2P 차단"), CUSTOM("사용자 지정 차단 도메인");
 
     val group: DomainGroup? get() = when (this) {
         KAKAO -> DomainGroup.KAKAO
         NAVER -> DomainGroup.NAVER
+        ADS -> DomainGroup.ADS
         P2P -> DomainGroup.P2P
         CUSTOM -> DomainGroup.CUSTOM
         else -> null
     }
     val parent: ParentPage? get() = when (this) {
         MENU -> null
-        KAKAO, NAVER, P2P, CUSTOM -> FILTERS
+        KAKAO, NAVER, ADS, P2P, CUSTOM -> FILTERS
         else -> MENU
     }
 }
@@ -124,7 +125,7 @@ internal fun ProtectionScreen(
                                     if (state.filteringRequested && vpn.phase == VpnPhase.ERROR) {
                                         Button(onClick = { onVpn(true) }, enabled = !busy) { Text("VPN 승인·연결 다시 시도") }
                                     }
-                                    MenuButton("3. VPN 필터 설정", "서비스별 차단 · 숏폼 · P2P · 사용자 지정 도메인") { page = ParentPage.FILTERS }
+                                    MenuButton("3. VPN 필터 설정", "서비스별 차단 · 숏폼 · 광고 · P2P · 사용자 지정 도메인") { page = ParentPage.FILTERS }
                                     MenuButton("4. 처음 시작: 설정 보호 옵션", "관리자·접근성·VPN 등 6개 상태 확인") { page = ParentPage.SETUP }
                                     MenuButton("5. 업데이트", "APK 링크로 다운로드·설치") { page = ParentPage.UPDATE }
                                     MenuButton("6. 기타", "PIN 변경 · 복구 코드 · 보호 해제") { page = ParentPage.OTHER }

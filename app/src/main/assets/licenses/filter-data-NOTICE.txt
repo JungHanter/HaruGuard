@@ -24,3 +24,9 @@ https://filejo.com/main/ ; https://www.filecity.co.kr/ ; https://www.yesfile.com
 https://realweb2.ondisk.co.kr/pop.php?sm=popup_guide&type=top ; https://new.pdpop.com/
 HaGeZi and other lists were consulted during research but are not bundled or imported.
 The editable list is not a BitTorrent protocol firewall or a search-keyword filter.
+
+Advertising candidates, checked 2026-11-06:
+YousList: https://github.com/yous/YousList (CC BY 4.0)
+Selected advertising hosts are bundled in vpn/AdDomains.kt.
+Snapshot, selection changes, authors and license links: YousList-NOTICE.txt.
+Full license: CC-BY-4.0.txt. No browser HTML/script rules are bundled.

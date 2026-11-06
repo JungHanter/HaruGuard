@@ -48,6 +48,7 @@ class P1NavigationInstrumentedTest {
                     onGroupFilter = { group, enabled -> settings.value = when (group) {
                         DomainGroup.KAKAO -> settings.value.copy(kakaoEnabled = enabled)
                         DomainGroup.NAVER -> settings.value.copy(naverEnabled = enabled)
+                        DomainGroup.ADS -> settings.value.copy(adsEnabled = enabled)
                         DomainGroup.P2P -> settings.value.copy(p2pEnabled = enabled)
                         DomainGroup.CUSTOM -> settings.value
                     } },
@@ -171,16 +172,17 @@ class P1NavigationInstrumentedTest {
         awaitText("새 부모 PIN")
     }
 
-    @Test fun serviceToggleAndFourEditableListsRemainIndependent() {
+    @Test fun serviceToggleAndFiveEditableListsRemainIndependent() {
         showScreen()
         click("3. VPN 필터 설정")
         screenshot("p1-filters")
         click("YouTube")
         for ((group, title) in listOf(DomainGroup.KAKAO to "카카오톡 숏폼 도메인 편집",
-            DomainGroup.NAVER to "네이버 클립 도메인 편집", DomainGroup.P2P to "P2P 도메인 편집",
+            DomainGroup.NAVER to "네이버 클립 도메인 편집", DomainGroup.ADS to "광고 도메인 편집", DomainGroup.P2P to "P2P 도메인 편집",
             DomainGroup.CUSTOM to "사용자 지정 도메인 편집")) {
             click(title)
             if (group == DomainGroup.NAVER) screenshot("p1-naver")
+            if (group == DomainGroup.ADS) screenshot("p1-ads")
             click("도메인 추가")
             enter("added.example.com")
             click("저장")
@@ -188,6 +190,26 @@ class P1NavigationInstrumentedTest {
             back()
         }
         assertFalse(FilterService.YOUTUBE in settings.value.enabledServices)
+    }
+
+    @Test fun advertisingToggleAndDomainDeletionKeepOtherListsAndMenuOrder() {
+        settings.value = settings.value.copy(adDomains = setOf("ad.example.org"))
+        val before = settings.value
+        showScreen()
+        click("3. VPN 필터 설정")
+        // 순서대로 아래로 스크롤해 세 메뉴에 도달할 수 있어야 한다.
+        visible("D. 광고 차단")
+        click("광고 도메인 편집")
+        awaitText("광고 차단")
+        click("광고 차단")
+        assertFalse(settings.value.adsEnabled)
+        click("삭제")
+        click("삭제")
+        awaitText("등록된 도메인이 없습니다. 이 목록에서 차단하는 주소가 없습니다.")
+        assertEquals(before.copy(adsEnabled = false, adDomains = emptySet()), settings.value)
+        back()
+        visible("E. P2P 차단")
+        visible("F. 사용자 지정 차단 도메인")
     }
 
     @Test fun domainEditorSupportsRetryEditAndDelete() {
