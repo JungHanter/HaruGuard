@@ -8,6 +8,7 @@ internal object SettingsScreenPolicy {
         APP("앱 관리"), ADMIN("기기 관리자"), ACCESSIBILITY("접근성"), VPN("VPN"),
         BATTERY("배터리 최적화"), BACKGROUND("백그라운드 실행"), ALARM("알람 권한"),
         RESET("초기화"), DEVELOPER("개발자옵션 활성화"), TETHERING("핫스팟·테더링"),
+        UNKNOWN_SOURCES("출처를 알 수 없는 앱 설치"),
     }
     enum class Scope(val label: String) {
         OUR_APP("HaruGuard 상세 화면"), CATEGORY("해당 메뉴"),
@@ -94,6 +95,18 @@ internal object SettingsScreenPolicy {
             "앱 설정 초기화", "앱 환경설정 초기화", "접근성 설정 초기화", "기기 전체 초기화", "공장 초기화",
             "모든 데이터 삭제", "모든 데이터 삭제(초기화)", "모든 데이터 삭제 (초기화)")
         if (safeTitle && !vpnTitle && !adminTitle && !accessibilityTitle && !resetTitle) return null
+        // 설치 출처 목록과 앱별 허용 화면을 모두 보호한다. HaruGuard도 평소에는 예외가 아니다.
+        // 상위 보안·특별한 접근 화면의 메뉴 행이나 이전 창의 클래스 힌트만으로는 차단하지 않는다.
+        // https://www.samsungsvc.co.kr/solution/23445
+        // https://android.googlesource.com/platform/packages/apps/Settings/+/master/AndroidManifest.xml
+        val unknownSourcesTitle = titled("Install unknown apps", "Install other apps", "Unknown sources",
+            "출처를 알 수 없는 앱 설치", "출처를 알수 없는 앱 설치", "출처를 알 수 없는 앱", "알 수 없는 앱 설치", "알 수 없는 출처")
+        val securityOverview = titled("Settings", "Security", "Security & privacy", "Security and privacy",
+            "Other security settings", "More security settings", "Special access", "Special app access", "Apps", "App info",
+            "설정", "보안", "보안 및 개인정보 보호", "보안 및 개인 정보 보호", "기타 보안 설정", "기타 보안", "특별한 접근", "애플리케이션", "앱", "앱 정보")
+        if (unknownSourcesTitle || !securityOverview && named("manageexternalsources", "manageappexternalsources", "externalsourcesdetails")) {
+            return Block(Area.UNKNOWN_SOURCES, Scope.CATEGORY)
+        }
         // 화면 제목이 없는 직접 진입은 AOSP/삼성의 테더링 전용 클래스 이름으로 보완한다.
         if (named("tethersettings", "wifitethersettings", "wifitethersetting", "wifihotspotsettings",
                 "wifihotspotconfig", "wifihotspotdialog", "hotspotsettings", "mobileapsettings",

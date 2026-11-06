@@ -10,6 +10,81 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class SettingsScreenPolicyTest {
+    @Test fun unknownSourceListsAndEveryAppDetailAreProtected() {
+        for (title in listOf("Install unknown apps", "Install other apps", "Unknown sources",
+            "출처를 알 수 없는 앱 설치", "출처를 알수 없는 앱 설치", "출처를 알 수 없는 앱", "알 수 없는 앱 설치", "알 수 없는 출처")) {
+            val list = Screen(headings = listOf(title), list = true, labels = listOf("HaruGuard", "Chrome", "내 파일"))
+            assertEquals(title, Block(Area.UNKNOWN_SOURCES, Scope.CATEGORY), SettingsScreenPolicy.block(list))
+            for (app in listOf("HaruGuard", "Chrome", "내 파일")) {
+                val detail = Screen(headings = listOf(title), appLabels = listOf(app), inlineControls = true)
+                assertEquals("$title / $app", Block(Area.UNKNOWN_SOURCES, Scope.CATEGORY), SettingsScreenPolicy.block(detail))
+                assertNull("$title / $app", SettingsScreenPolicy.block(detail, maintenanceOpen = true))
+            }
+            assertNull(title, SettingsScreenPolicy.block(list, maintenanceOpen = true))
+        }
+    }
+
+    @Test fun unknownSourceDirectEntryWithoutATitleUsesTheSpecificSettingsClass() {
+        for (name in listOf("com.android.settings.Settings\$ManageExternalSourcesActivity",
+            "Settings\$ManageAppExternalSourcesActivity", "com.android.settings.applications.appinfo.ExternalSourcesDetails")) {
+            val page = Screen(className = name, appLabels = listOf("Chrome"))
+            assertEquals(name, Block(Area.UNKNOWN_SOURCES, Scope.CATEGORY), SettingsScreenPolicy.block(page))
+            assertNull(name, SettingsScreenPolicy.block(page, maintenanceOpen = true))
+        }
+        assertNull(SettingsScreenPolicy.block(Screen(className = "ManageApplications")))
+    }
+
+    @Test fun unknownSourceMenuRowsAndStaleClassHintsLeaveParentSettingsAvailable() {
+        for (title in listOf("Settings", "Security", "Security & privacy", "Security and privacy",
+            "Other security settings", "More security settings", "Special access", "Special app access", "Apps",
+            "설정", "보안", "보안 및 개인정보 보호", "보안 및 개인 정보 보호", "기타 보안 설정", "기타 보안", "특별한 접근", "애플리케이션", "앱", "Wi-Fi")) {
+            assertNull(title, SettingsScreenPolicy.block(Screen(className = "Settings\$ManageExternalSourcesActivity",
+                headings = listOf(title), labels = listOf("Install unknown apps", "출처를 알 수 없는 앱 설치"), list = true)))
+        }
+        assertNull(SettingsScreenPolicy.block(Screen(className = "ExternalSourcesDetails",
+            headings = listOf("App info"), appLabels = listOf("Chrome"), labels = listOf("Install unknown apps"))))
+        assertEquals(Block(Area.APP, Scope.OUR_APP), SettingsScreenPolicy.block(Screen(className = "ExternalSourcesDetails",
+            headings = listOf("앱 정보"), appLabels = listOf("HaruGuard"), labels = listOf("출처를 알 수 없는 앱 설치"))))
+    }
+
+    @Test fun unknownSourceSearchTextAndResultsAreNotPageTitles() {
+        val nodes = listOf(
+            Node(-1, emptyList(), "com.android.settings:id/toolbar", "Toolbar"),
+            Node(0, listOf("출처를 알 수 없는 앱 설치"), "android:id/search_src_text", "EditText", editable = true),
+            Node(-1, emptyList(), "android:id/list", "RecyclerView", collection = true),
+            Node(2, listOf("Install unknown apps"), "android:id/title", "TextView"),
+        )
+        assertNull(SettingsScreenPolicy.block(SettingsScreenPolicy.screen("SearchActivity", nodes)))
+        assertEquals(Block(Area.UNKNOWN_SOURCES, Scope.CATEGORY), SettingsScreenPolicy.block(
+            SettingsScreenPolicy.screen("FrameLayout", emptyList(), "출처를 알 수 없는 앱 설치")))
+    }
+
+    @Test fun unknownSourceAppHeaderAndToolbarStillIdentifyTheProtectedPage() {
+        val nodes = listOf(
+            Node(-1, emptyList(), "com.android.settings:id/toolbar", "Toolbar"),
+            Node(0, listOf("Install unknown apps"), "android:id/title", "TextView"),
+            Node(-1, listOf("HaruGuard"), "com.android.settings:id/entity_header_title", "TextView"),
+            Node(-1, listOf("Allow from this source"), "android:id/switch_widget", "Switch", checkable = true),
+        )
+        val page = SettingsScreenPolicy.screen("SubSettings", nodes)
+        assertEquals(Block(Area.UNKNOWN_SOURCES, Scope.CATEGORY), SettingsScreenPolicy.block(page))
+        assertNull(SettingsScreenPolicy.block(page, maintenanceOpen = true))
+    }
+
+    @Test fun unknownSourceUpdatePermissionIsProtectedAgainWhenParentMaintenanceEnds() {
+        var elapsed = 0L
+        val session = ParentSession { elapsed }
+        val page = Screen(className = "Settings\$ManageAppExternalSourcesActivity", appLabels = listOf("HaruGuard"))
+        session.authenticate(session.generation())
+        // PIN 인증만으로 설정을 개방하지 않는다. 업데이트의 명시적 개방과 같은 세션을 사용한다.
+        assertEquals(Block(Area.UNKNOWN_SOURCES, Scope.CATEGORY), SettingsScreenPolicy.block(page, maintenanceOpen = session.maintenanceRemainingMillis() > 0))
+        session.openMaintenance()
+        elapsed = ParentSession.AUTH_DURATION_MILLIS - 1
+        assertNull(SettingsScreenPolicy.block(page, maintenanceOpen = session.maintenanceRemainingMillis() > 0))
+        elapsed++
+        assertEquals(Block(Area.UNKNOWN_SOURCES, Scope.CATEGORY), SettingsScreenPolicy.block(page, maintenanceOpen = session.maintenanceRemainingMillis() > 0))
+    }
+
     @Test fun hotspotAndTetheringPagesAreProtectedAndParentMaintenanceStillWorks() {
         for (title in listOf("Hotspot & tethering", "Mobile Hotspot and Tethering", "Wi-Fi hotspot",
             "USB tethering", "Bluetooth tethering", "Ethernet tethering", "Auto Hotspot",
