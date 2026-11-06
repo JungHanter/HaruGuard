@@ -31,7 +31,7 @@ class DomainInputTest {
     }
 
     @Test fun everyBundledServiceAndDefaultDomainIsValid() {
-        (FilterCatalog.domains.values.flatten() + FilterCatalog.kakaoDefaults + FilterCatalog.naverDefaults).forEach {
+        (FilterCatalog.domains.values.flatten() + FilterCatalog.kakaoDefaults + FilterCatalog.naverDefaults + FilterCatalog.p2pDefaults).forEach {
             assertEquals(it, suffixes.validate(it))
         }
     }

@@ -146,7 +146,7 @@ class YouTubeVpnService : VpnService() {
         val current = session.currentConnection as? DnsTunnel
         if (current != null) {
             if (!current.isHealthy) retryAfterFailure(getString(R.string.vpn_tunnel_stalled))
-            else current.applyPolicy(FilterPolicy(filterPreferences.load()))
+            else current.applySettings(filterPreferences.load())
         } else if (session.status.phase != VpnPhase.RECOVERING || networkReturned) {
             if (networkReturned) reconnect.stop()
             connectTunnel()
@@ -368,7 +368,7 @@ class YouTubeVpnService : VpnService() {
             if (!service.foreground || service.destroyed) return false
             val tunnel = service.session.currentConnection as? DnsTunnel ?: return false
             if (!tunnel.isHealthy) return false
-            tunnel.applyPolicy(FilterPolicy(settings))
+            tunnel.applySettings(settings)
             return true
         }
 

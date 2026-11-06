@@ -10,6 +10,43 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class SettingsScreenPolicyTest {
+    @Test fun hotspotAndTetheringPagesAreProtectedAndParentMaintenanceStillWorks() {
+        for (title in listOf("Hotspot & tethering", "Mobile Hotspot and Tethering", "Wi-Fi hotspot",
+            "USB tethering", "Bluetooth tethering", "Ethernet tethering", "Auto Hotspot",
+            "모바일 핫스팟 및 테더링", "모바일 핫스팟", "USB 테더링", "자동 핫스팟")) {
+            val page = Screen(headings = listOf(title))
+            assertEquals(title, Block(Area.TETHERING, Scope.CATEGORY), SettingsScreenPolicy.block(page))
+            assertNull(title, SettingsScreenPolicy.block(page, maintenanceOpen = true))
+        }
+        for (name in listOf("com.android.settings.TetherSettings", "Settings\$WifiTetherSettingsActivity",
+            "com.samsung.android.settings.wifi.mobileap.WifiApSettings", "MobileApSettings", "WifiApAutoHotspotSettings")) {
+            assertEquals(name, Block(Area.TETHERING, Scope.CATEGORY), SettingsScreenPolicy.block(Screen(className = name)))
+        }
+    }
+
+    @Test fun hotspotRowsAndStaleClassHintsDoNotBlockGeneralNetworkOrWifi() {
+        for (title in listOf("Connections", "Network & internet", "Wi-Fi", "Bluetooth", "연결")) {
+            assertNull(SettingsScreenPolicy.block(Screen(className = "WifiApSettings", headings = listOf(title),
+                labels = listOf("Mobile Hotspot and Tethering", "USB tethering"), list = true)))
+        }
+        val search = listOf(
+            Node(-1, emptyList(), "android:id/list", "RecyclerView", collection = true),
+            Node(0, listOf("모바일 핫스팟"), "android:id/title", "TextView"),
+            Node(-1, listOf("USB tethering"), "android:id/search_src_text", "EditText", editable = true),
+        )
+        assertNull(SettingsScreenPolicy.block(SettingsScreenPolicy.screen("SearchActivity", search)))
+    }
+
+    @Test fun explicitInlineTetheringControlsAreProtectedWithoutBlockingPlainMenuRows() {
+        val control = Node(-1, listOf("Mobile Hotspot, Off"), "android:id/switch_widget", "Switch", checkable = true)
+        val page = SettingsScreenPolicy.screen("SubSettings", listOf(control), "Connections")
+        assertEquals(Block(Area.TETHERING, Scope.INLINE_LIST), SettingsScreenPolicy.block(page))
+        assertEquals(Block(Area.TETHERING, Scope.INLINE_LIST), SettingsScreenPolicy.block(Screen(
+            headings = listOf("연결"), viewIds = listOf("com.android.settings:id/usb_tethering_switch"))))
+        assertNull(SettingsScreenPolicy.block(SettingsScreenPolicy.screen("SubSettings", listOf(control.copy(checkable = false)), "Connections")))
+        assertNull(SettingsScreenPolicy.block(SettingsScreenPolicy.screen("SubSettings", listOf(control.copy(editable = true)), "Connections")))
+    }
+
     @Test fun settingsHomeDoesNotBlockBecauseSensitiveMenuNamesAreVisible() {
         val page = Screen(className = "com.android.settings.homepage.SettingsHomepageActivity",
             headings = listOf("Settings"), labels = listOf("Apps", "Accessibility", "VPN", "HaruGuard", "Battery optimization"))

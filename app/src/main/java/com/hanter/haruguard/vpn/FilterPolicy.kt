@@ -12,7 +12,7 @@ internal enum class FilterService(val title: String, val packageName: String) {
 }
 
 internal enum class DomainGroup(val title: String) {
-    KAKAO("카카오톡 숏폼"), NAVER("네이버 클립"), CUSTOM("사용자 지정 차단 도메인"),
+    KAKAO("카카오톡 숏폼"), NAVER("네이버 클립"), P2P("P2P"), CUSTOM("사용자 지정 차단 도메인"),
 }
 
 /** 설정값은 불변 스냅샷으로 전달해 DNS와 실제 연결이 같은 정책을 읽게 한다. */
@@ -23,22 +23,27 @@ internal data class FilterSettings(
     val kakaoDomains: Set<String> = FilterCatalog.kakaoDefaults,
     val naverDomains: Set<String> = FilterCatalog.naverDefaults,
     val customDomains: Set<String> = emptySet(),
+    val p2pEnabled: Boolean = true,
+    val p2pDomains: Set<String> = FilterCatalog.p2pDefaults,
 ) {
     fun domains(group: DomainGroup): Set<String> = when (group) {
         DomainGroup.KAKAO -> kakaoDomains
         DomainGroup.NAVER -> naverDomains
+        DomainGroup.P2P -> p2pDomains
         DomainGroup.CUSTOM -> customDomains
     }
 
     fun withDomains(group: DomainGroup, domains: Set<String>): FilterSettings = when (group) {
         DomainGroup.KAKAO -> copy(kakaoDomains = domains.toSet())
         DomainGroup.NAVER -> copy(naverDomains = domains.toSet())
+        DomainGroup.P2P -> copy(p2pDomains = domains.toSet())
         DomainGroup.CUSTOM -> copy(customDomains = domains.toSet())
     }
 
     fun enabled(group: DomainGroup): Boolean = when (group) {
         DomainGroup.KAKAO -> kakaoEnabled
         DomainGroup.NAVER -> naverEnabled
+        DomainGroup.P2P -> p2pEnabled
         DomainGroup.CUSTOM -> true
     }
 }
@@ -53,15 +58,32 @@ internal sealed interface DomainDecision {
 internal class FilterPolicy(val settings: FilterSettings) {
     private val globalDomains = settings.customDomains +
         (if (settings.kakaoEnabled) settings.kakaoDomains else emptySet()) +
-        (if (settings.naverEnabled) settings.naverDomains else emptySet())
+        (if (settings.naverEnabled) settings.naverDomains else emptySet()) +
+        (if (settings.p2pEnabled) settings.p2pDomains else emptySet())
+    private val servicePackages = buildMap<String, Set<String>> {
+        settings.enabledServices.forEach { service ->
+            FilterCatalog.domains.getValue(service).forEach { domain ->
+                put(domain, get(domain).orEmpty() + service.packageName)
+            }
+        }
+    }
 
     fun decision(host: String): DomainDecision {
-        val normalized = host.trimEnd('.').lowercase(Locale.ROOT)
-        if (globalDomains.any { matches(normalized, it) }) return DomainDecision.Block
-        val packages = settings.enabledServices.filter { service ->
-            FilterCatalog.domains.getValue(service).any { matches(normalized, it) }
-        }.map { it.packageName }.toSet()
-        return if (packages.isEmpty()) DomainDecision.Direct else DomainDecision.OfficialApps(packages)
+        var suffix = host.trimEnd('.').lowercase(Locale.ROOT)
+        var packages: MutableSet<String>? = null
+        // 목록 전체를 순회하지 않고 호스트와 상위 도메인을 해시 조회한다.
+        // 항목 수가 늘어도 DNS 판정 횟수는 호스트의 라벨 수에 비례한다.
+        while (suffix.isNotEmpty()) {
+            if (suffix in globalDomains) return DomainDecision.Block
+            servicePackages[suffix]?.let { matches ->
+                val allowed = packages ?: mutableSetOf<String>().also { packages = it }
+                allowed.addAll(matches)
+            }
+            val dot = suffix.indexOf('.')
+            if (dot < 0) break
+            suffix = suffix.substring(dot + 1)
+        }
+        return packages?.let { DomainDecision.OfficialApps(it.toSet()) } ?: DomainDecision.Direct
     }
 
     fun mayConnect(host: String?, ownerUid: () -> Int, packageUid: (String) -> Int?): Boolean {
@@ -84,21 +106,28 @@ internal class FilterPolicy(val settings: FilterSettings) {
 /** 목록의 빈 값도 저장한다. 부모가 지운 기본 주소를 다음 실행/업데이트에서 복원하지 않는다. */
 internal object FilterSettingsCodec {
     fun encode(settings: FilterSettings): String = listOf(
-        "version=1",
+        "version=2",
         "services=${settings.enabledServices.map { it.name }.sorted().joinToString(",")}",
         "kakaoEnabled=${settings.kakaoEnabled}",
         "naverEnabled=${settings.naverEnabled}",
         "kakao=${settings.kakaoDomains.sorted().joinToString(",")}",
         "naver=${settings.naverDomains.sorted().joinToString(",")}",
         "custom=${settings.customDomains.sorted().joinToString(",")}",
+        "p2pEnabled=${settings.p2pEnabled}",
+        "p2p=${settings.p2pDomains.sorted().joinToString(",")}",
     ).joinToString("\n")
 
     fun decode(text: String): FilterSettings {
-        require(text.length <= 500_000) { "차단 설정이 너무 큽니다." }
+        require(text.length <= 1_000_000) { "차단 설정이 너무 큽니다." }
         val lines = text.split('\n')
-        require(lines.size == 7 && lines.all { it.contains('=') }) { "차단 설정 형식 오류" }
+        require(lines.size in setOf(7, 9) && lines.all { it.contains('=') }) { "차단 설정 형식 오류" }
         val values = lines.associate { it.substringBefore('=') to it.substringAfter('=') }
-        require(values.size == 7 && values["version"] == "1") { "지원하지 않는 차단 설정" }
+        val legacy = values["version"] == "1"
+        val keys = setOf("version", "services", "kakaoEnabled", "naverEnabled", "kakao", "naver", "custom") +
+            if (legacy) emptySet() else setOf("p2pEnabled", "p2p")
+        require(values["version"] in setOf("1", "2") && values.size == lines.size && values.keys == keys) {
+            "지원하지 않는 차단 설정"
+        }
         fun values(key: String): Set<String> = values.getValue(key).let {
             if (it.isEmpty()) emptySet() else it.split(',').toSet()
         }
@@ -107,6 +136,10 @@ internal object FilterSettingsCodec {
             values.getValue("kakaoEnabled").toBooleanStrict(),
             values.getValue("naverEnabled").toBooleanStrict(),
             values("kakao"), values("naver"), values("custom"),
+            if (legacy) true else values.getValue("p2pEnabled").toBooleanStrict(),
+            if (legacy) FilterCatalog.p2pDefaults else values("p2p"),
         )
     }
+
+    fun needsUpgrade(text: String): Boolean = text.lineSequence().any { it == "version=1" }
 }

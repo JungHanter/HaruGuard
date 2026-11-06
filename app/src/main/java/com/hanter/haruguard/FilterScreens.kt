@@ -56,14 +56,18 @@ internal fun FilterControls(
     ToggleCard("네이버 클립 차단", "네이버 앱을 포함한 모든 앱에서 목록의 도메인 차단 · ${settings.naverDomains.size}개",
         settings.naverEnabled, !busy) { onGroup(DomainGroup.NAVER, it) }
     MenuButton("네이버 클립 도메인 편집", "기본 후보 주소 추가·수정·삭제") { onNavigate(ParentPage.NAVER) }
-    Text("D. 사용자 지정 차단 도메인", style = MaterialTheme.typography.titleMedium)
+    Text("D. P2P 차단", style = MaterialTheme.typography.titleMedium)
+    ToggleCard("P2P 차단", "토렌트·웹하드 등 목록의 도메인을 모든 앱에서 차단 · ${settings.p2pDomains.size}개",
+        settings.p2pEnabled, !busy) { onGroup(DomainGroup.P2P, it) }
+    MenuButton("P2P 도메인 편집", "기본 목록 추가·수정·삭제") { onNavigate(ParentPage.P2P) }
+    Text("E. 사용자 지정 차단 도메인", style = MaterialTheme.typography.titleMedium)
     MenuButton("사용자 지정 도메인 편집", "${settings.customDomains.size}개 · 공식 앱을 포함한 모든 앱에서 차단") { onNavigate(ParentPage.CUSTOM) }
     Text("숏폼 기본 목록은 공개 자료를 바탕으로 선정한 후보입니다. 모든 숏폼이 차단되거나 일반 기능에 영향이 없다고 확인된 목록은 아닙니다. 문제가 생기면 해당 토글을 끄거나 주소를 편집하세요.", style = MaterialTheme.typography.bodySmall)
 }
 
 private data class DomainEdit(val original: String?)
 
-/** B/C/D는 동일한 편집 화면을 사용한다. 입력/대화상자는 화면 이동·잠금 시 저장하지 않는다. */
+/** B/C/D/E는 동일한 편집 화면을 사용한다. 입력/대화상자는 화면 이동·잠금 시 저장하지 않는다. */
 @Composable
 internal fun DomainListScreen(
     group: DomainGroup, settings: FilterSettings, busy: Boolean,
@@ -81,6 +85,7 @@ internal fun DomainListScreen(
                     ToggleCard("${group.title} 차단", "목록의 도메인을 모든 앱에서 차단합니다.", settings.enabled(group), !busy) { onGroup(group, it) }
                     Text("기본 주소는 공개 자료에서 찾은 후보입니다. 직접 추가·수정·삭제할 수 있고, 삭제한 기본 주소는 자동으로 다시 넣지 않습니다.", style = MaterialTheme.typography.bodySmall)
                     if (group == DomainGroup.NAVER) Text("일부 클립은 일반 네이버 서비스와 주소를 공유해 남을 수 있습니다. 클립 관련 댓글·프로필 기능에도 영향이 있을 수 있으니 문제가 있으면 주소를 제거하세요.", style = MaterialTheme.typography.bodySmall)
+                    if (group == DomainGroup.P2P) Text("토렌트 검색·미러·클라이언트 배포 사이트와 일부 트래커, 국내 웹하드 주소를 포함합니다. 등록된 사이트 안의 검색은 막지만 구글·네이버 검색어 자체는 차단하지 않습니다. 직접 IP·DHT·새 미러 등 P2P 통신 전체를 막는 기능은 아닙니다.", style = MaterialTheme.typography.bodySmall)
                 }
                 Text("도메인만 입력하세요. 예: dcinside.com\nhttp://, https://, /경로는 넣지 마세요. 루트와 모든 하위 도메인을 HTTP·HTTPS 구분 없이 차단합니다.", style = MaterialTheme.typography.bodySmall)
                 Text("공식 앱에도 예외 없이 적용됩니다. VPN이 켜져 있어야 하며 자체 DNS·이미 열린 연결·저장된 영상은 차단되지 않을 수 있습니다.", style = MaterialTheme.typography.bodySmall)

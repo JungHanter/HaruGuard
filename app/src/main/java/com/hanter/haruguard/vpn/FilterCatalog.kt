@@ -66,4 +66,28 @@ internal object FilterCatalog {
     // 네이버 공식 숏폼 뷰어가 참조하는 전용 호스트 후보. 공유 apis.naver.com은 제외한다.
     // https://m.naver.com/shorts/ (clipViewerHost 및 공개 스크립트, 2026-11-05)
     val naverDefaults = setOf("clip.naver.com", "clip-viewer.naver.com", "creatorhub-api.naver.com")
+
+    // 공개 Torrent 목록에서 대표 사이트·명시적 미러·트래커 호스트를 선별했다.
+    // https://github.com/blocklistproject/Lists (고지는 assets/licenses에 포함, 2026-11-06)
+    val p2pDefaults = setOf(
+        "1337x.org", "1337x.to", "1337x.unblocked.llc",
+        "bittorrent.am", "bittorrent.com", "deluge-torrent.org",
+        "eztv.io", "eztv.re", "eztv.unblocked.llc",
+        "idope.unblocked.llc", "kickasstorrents.pw", "limetorrents.info",
+        "limetorrents.unblocked.llc", "magnetdl.com", "magnetdl.unblocked.llc",
+        "nyaa.eu", "nyaa.si", "nyaatorrents.org",
+        "open.demonii.com", "open.stealth.si", "qbittorrent.org",
+        "thepiratebay.cx", "thepiratebay.org", "torlock.unblocked.llc",
+        "torrentdownloads.me", "torrentdownloads.net", "torrentdownloads.unblocked.llc",
+        "torrentfunk.unblocked.llc", "torrentgalaxy.to", "torrentz.com",
+        "torrentz.eu", "torrentz.nu", "torrentz2.eu",
+        "tracker.bt4g.com", "tracker.openbittorrent.com", "tracker.torrent.eu.org",
+        "utorrent.com", "yts.lt", "yts.mx",
+        "yts.unblocked.llc",
+        // 국내 웹하드도 서비스 전체를 차단한다. 일반 클라우드 저장소는 포함하지 않는다.
+        // https://filejo.com/main/ · https://www.filecity.co.kr/ · https://www.yesfile.com/
+        // https://realweb2.ondisk.co.kr/pop.php?sm=popup_guide&type=top · https://new.pdpop.com/
+        "filejo.com", "filecity.co.kr", "yesfile.com", "ondisk.co.kr", "pdpop.com", "wedisk.co.kr"
+    )
+
 }

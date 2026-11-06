@@ -6,6 +6,14 @@ import org.junit.Test
 import com.hanter.haruguard.ProtectedScreenPolicy.Surface
 
 class ProtectedScreenPolicyTest {
+    @Test fun hotspotDialogsAreProtectedWithoutClosingTheOrdinaryQuickPanel() {
+        assertTrue(ProtectedScreenPolicy.shouldBlock(Surface.SYSTEM_UI, "WifiHotspotDialog", emptyList()))
+        assertTrue(ProtectedScreenPolicy.shouldBlock(Surface.SYSTEM_UI, "Dialog", listOf("모바일 핫스팟", "켜기")))
+        assertTrue(ProtectedScreenPolicy.shouldBlock(Surface.SYSTEM_UI, "FrameLayout", listOf("Mobile Hotspot"), scopedContent = true))
+        assertFalse(ProtectedScreenPolicy.shouldBlock(Surface.SYSTEM_UI, "NotificationShade", listOf("Mobile Hotspot", "Wi-Fi", "Bluetooth")))
+        assertFalse(ProtectedScreenPolicy.shouldBlock(Surface.SYSTEM_UI, "InternetDialog", listOf("Wi-Fi", "Mobile data")))
+    }
+
     @Test fun settingsNeedsPageClassificationWhileVpnConsentIsProtected() {
         assertFalse(ProtectedScreenPolicy.shouldBlock(Surface.SETTINGS, "", emptyList()))
         assertTrue(ProtectedScreenPolicy.shouldBlock(Surface.VPN_DIALOG, "", emptyList()))

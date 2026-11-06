@@ -30,6 +30,8 @@ internal object ProtectedScreenPolicy {
             Surface.INSTALLER -> name.contains("uninstall") || (dialog && hasApp &&
                 includes("uninstall", "delete", "remove", "삭제", "제거"))
             Surface.SYSTEM_UI -> name.contains("fgsmanager") || name.contains("foregroundservices") ||
+                name.contains("hotspotdialog") || name.contains("tetherdialog") ||
+                (dialog && values.any(SettingsScreenPolicy::isTetheringTitle)) ||
                 name.contains("vpnconfig") || name.contains("vpndialog") ||
                 ids.any { it.startsWith("fgs_manager_app") || it == "fgs_manager_stop_button" ||
                     it == "fgs_stop" || it == "foreground_service_stop" } ||

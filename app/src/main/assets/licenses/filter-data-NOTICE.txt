@@ -11,3 +11,16 @@ Editable Kakao candidates: https://netxhack.com/hack/block-kakaotalk-shorts/
 Core-host exclusions checked against https://github.com/SecuredEevee/kakao_adblock
 Editable Naver candidates: https://m.naver.com/shorts/ and its public viewer script.
 These candidates have not been verified on the target device.
+
+P2P domain candidates, checked 2026-11-06:
+The Block List Project: https://github.com/blocklistproject/Lists
+Source: https://raw.githubusercontent.com/blocklistproject/Lists/main/torrent.txt
+Selected representative torrent sites, explicit mirror hosts, client sites and tracker hosts.
+The repository LICENSE is the Unlicense (bundled as blocklistproject-UNLICENSE.txt).
+The torrent.txt header still labels the data MIT; this attribution is preserved here.
+Source header: maintained by The Block List Project, last modified 2026-07-06.
+Korean webhard roots were identified from the services' own public pages:
+https://filejo.com/main/ ; https://www.filecity.co.kr/ ; https://www.yesfile.com/
+https://realweb2.ondisk.co.kr/pop.php?sm=popup_guide&type=top ; https://new.pdpop.com/
+HaGeZi and other lists were consulted during research but are not bundled or imported.
+The editable list is not a BitTorrent protocol firewall or a search-keyword filter.

@@ -73,4 +73,45 @@ class FilterPolicyTest {
         assertTrue(off.mayConnect(routing.hostFor(ip), { error("토글 OFF에는 조회 불필요") }, { null }))
         assertEquals(ip, routing.addressFor("youtube.com"))
     }
+
+    @Test fun p2pSwitchAndEditsKeepOtherGlobalRulesAndOfficialAppExceptionsIndependent() {
+        val settings = defaults.copy(p2pDomains = setOf("youtube.com", "torrent.example.org"),
+            customDomains = setOf("torrent.example.org"))
+        assertEquals(DomainDecision.Block, FilterPolicy(settings).decision("www.youtube.com"))
+        val off = FilterPolicy(settings.copy(p2pEnabled = false))
+        assertTrue(off.decision("www.youtube.com") is DomainDecision.OfficialApps)
+        assertEquals(DomainDecision.Block, off.decision("torrent.example.org"))
+        assertEquals(DomainDecision.Direct,
+            FilterPolicy(settings.copy(p2pDomains = emptySet(), customDomains = emptySet())).decision("torrent.example.org"))
+    }
+
+    @Test fun p2pDefaultsCoverSitesAndKeepSearchEnginesAndSharedHostsAvailable() {
+        val policy = FilterPolicy(defaults)
+        listOf("thepiratebay.org", "1337x.to", "nyaa.si", "qbittorrent.org", "filejo.com", "pdpop.com").forEach { host ->
+            assertEquals(DomainDecision.Block, policy.decision(host))
+            assertEquals(DomainDecision.Block, policy.decision("www.$host"))
+        }
+        listOf("google.com", "search.naver.com", "drive.google.com", "dropbox.com", "github.com", "unblocked.llc").forEach { host ->
+            assertEquals(host, DomainDecision.Direct, policy.decision(host))
+        }
+    }
+
+    @Test fun indexedLookupPreservesBoundariesAcrossFourFullLists() {
+        var settings = defaults
+        DomainGroup.entries.forEach { group ->
+            settings = settings.withDomains(group, (0 until DomainInput.MAX_DOMAINS).map { "d$it.${group.name.lowercase()}.test" }.toSet())
+        }
+        val policy = FilterPolicy(settings)
+        DomainGroup.entries.forEach { group ->
+            settings.domains(group).forEach { host ->
+                assertEquals(DomainDecision.Block, policy.decision(host))
+                assertEquals(DomainDecision.Block, policy.decision("a.b.$host"))
+                assertEquals(DomainDecision.Direct, policy.decision("not$host"))
+                assertEquals(DomainDecision.Direct, policy.decision("$host.example.org"))
+            }
+        }
+        // 구체적인 앱 예외보다 상위 전역 차단이 우선해야 한다.
+        val parent = FilterPolicy(defaults.copy(customDomains = setOf("googleapis.com")))
+        assertEquals(DomainDecision.Block, parent.decision("youtubei.googleapis.com"))
+    }
 }

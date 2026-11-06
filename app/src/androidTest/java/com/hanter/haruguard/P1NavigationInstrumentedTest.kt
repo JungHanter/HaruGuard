@@ -48,6 +48,7 @@ class P1NavigationInstrumentedTest {
                     onGroupFilter = { group, enabled -> settings.value = when (group) {
                         DomainGroup.KAKAO -> settings.value.copy(kakaoEnabled = enabled)
                         DomainGroup.NAVER -> settings.value.copy(naverEnabled = enabled)
+                        DomainGroup.P2P -> settings.value.copy(p2pEnabled = enabled)
                         DomainGroup.CUSTOM -> settings.value
                     } },
                     onDomainEdit = { group, old, value ->
@@ -170,13 +171,14 @@ class P1NavigationInstrumentedTest {
         awaitText("새 부모 PIN")
     }
 
-    @Test fun serviceToggleAndThreeEditableListsRemainIndependent() {
+    @Test fun serviceToggleAndFourEditableListsRemainIndependent() {
         showScreen()
         click("3. VPN 필터 설정")
         screenshot("p1-filters")
         click("YouTube")
         for ((group, title) in listOf(DomainGroup.KAKAO to "카카오톡 숏폼 도메인 편집",
-            DomainGroup.NAVER to "네이버 클립 도메인 편집", DomainGroup.CUSTOM to "사용자 지정 도메인 편집")) {
+            DomainGroup.NAVER to "네이버 클립 도메인 편집", DomainGroup.P2P to "P2P 도메인 편집",
+            DomainGroup.CUSTOM to "사용자 지정 도메인 편집")) {
             click(title)
             if (group == DomainGroup.NAVER) screenshot("p1-naver")
             click("도메인 추가")

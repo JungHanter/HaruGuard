@@ -7,7 +7,7 @@ internal object SettingsScreenPolicy {
     enum class Area(val label: String) {
         APP("앱 관리"), ADMIN("기기 관리자"), ACCESSIBILITY("접근성"), VPN("VPN"),
         BATTERY("배터리 최적화"), BACKGROUND("백그라운드 실행"), ALARM("알람 권한"),
-        RESET("초기화"), DEVELOPER("개발자옵션 활성화"),
+        RESET("초기화"), DEVELOPER("개발자옵션 활성화"), TETHERING("핫스팟·테더링"),
     }
     enum class Scope(val label: String) {
         OUR_APP("HaruGuard 상세 화면"), CATEGORY("해당 메뉴"),
@@ -33,8 +33,24 @@ internal object SettingsScreenPolicy {
         val viewIds: List<String> = emptyList(),
         val list: Boolean = false,
         val inlineControls: Boolean = false,
+        val tetheringControls: Boolean = false,
     )
     private enum class Kind { APP, BATTERY_DETAIL, BATTERY_LIST, BACKGROUND_DETAIL, BACKGROUND_LIST, ALARM_DETAIL, ALARM_LIST }
+    private val tetheringTitles = setOf(
+        "Hotspot & tethering", "Hotspot and tethering", "Mobile Hotspot and Tethering", "Mobile Hotspot & Tethering",
+        "Mobile Hotspot", "Wi-Fi hotspot", "WiFi hotspot", "Portable Wi-Fi hotspot", "Portable hotspot",
+        "Tethering", "USB tethering", "Bluetooth tethering", "Ethernet tethering", "Auto Hotspot", "Wi-Fi sharing",
+        "모바일 핫스팟 및 테더링", "모바일 핫스팟", "핫스팟 및 테더링", "핫스팟", "Wi-Fi 핫스팟",
+        "휴대용 핫스팟", "테더링", "USB 테더링", "블루투스 테더링", "이더넷 테더링", "자동 핫스팟", "Wi-Fi 공유",
+    ).map(::normalize).toSet()
+    private val tetheringSwitchIds = setOf("wifi_ap_switch", "wifi_hotspot_switch", "mobile_hotspot_switch",
+        "hotspot_switch", "usb_tethering_switch", "usb_tether_switch", "bluetooth_tethering_switch", "ethernet_tether_switch")
+
+    fun isTetheringTitle(title: String): Boolean = normalize(title).trimEnd('?', '？') in tetheringTitles
+
+    private fun isTetheringControlLabel(label: String): Boolean = normalize(label).let { value ->
+        tetheringTitles.any { value == it || value.startsWith("$it,") || value.startsWith("$it ") }
+    }
 
     /** 상위 Settings·Network·Battery 등은 메뉴 항목 이름만으로 차단하지 않는다. */
     fun block(screen: Screen, developerOptionsEnabled: Boolean = false, maintenanceOpen: Boolean = false): Block? {
@@ -59,6 +75,10 @@ internal object SettingsScreenPolicy {
         val safeTitle = titled("Network & internet", "Network and internet", "Connections", "Internet", "Wi-Fi",
             "Bluetooth", "Display", "Display & touch", "Sound", "Sound & vibration", "Brightness",
             "네트워크 및 인터넷", "연결", "인터넷", "와이파이", "블루투스", "디스플레이", "소리", "소리 및 진동")
+        // 제목/실제 토글만 사용한다. 연결 화면에 메뉴 이름만 보이는 것으로 Wi-Fi까지 막지 않는다.
+        // https://android.googlesource.com/platform/packages/apps/Settings/+/android10-release/res/xml/tether_prefs.xml
+        if (titles.any(::isTetheringTitle)) return Block(Area.TETHERING, Scope.CATEGORY)
+        if (screen.tetheringControls || ids.any { it in tetheringSwitchIds }) return Block(Area.TETHERING, Scope.INLINE_LIST)
         val vpnTitle = titled("VPN", "VPN settings", "VPN 설정", "가상 사설망")
         val adminTitle = titled("Device admin apps", "Device administrators", "Device administrator",
             "기기 관리자 앱", "디바이스 관리자 앱", "기기 관리자")
@@ -74,6 +94,12 @@ internal object SettingsScreenPolicy {
             "앱 설정 초기화", "앱 환경설정 초기화", "접근성 설정 초기화", "기기 전체 초기화", "공장 초기화",
             "모든 데이터 삭제", "모든 데이터 삭제(초기화)", "모든 데이터 삭제 (초기화)")
         if (safeTitle && !vpnTitle && !adminTitle && !accessibilityTitle && !resetTitle) return null
+        // 화면 제목이 없는 직접 진입은 AOSP/삼성의 테더링 전용 클래스 이름으로 보완한다.
+        if (named("tethersettings", "wifitethersettings", "wifitethersetting", "wifihotspotsettings",
+                "wifihotspotconfig", "wifihotspotdialog", "hotspotsettings", "mobileapsettings",
+                "mobileaphotspot", "wifiapsettings", "wifiapconfiguration", "wifiapautohotspot")) {
+            return Block(Area.TETHERING, Scope.CATEGORY)
+        }
         // 실제 초기화 제목을 이전 Software information 창의 클래스 힌트보다 우선한다.
         if (resetTitle) return Block(Area.RESET, Scope.CATEGORY)
         val softwareInfo = titled("Software information", "Software info", "소프트웨어 정보") ||
@@ -194,7 +220,9 @@ internal object SettingsScreenPolicy {
         return Screen(className, headings.ifEmpty { secondaryHeadings }.ifEmpty { listOfNotNull(windowTitle) }.distinct(), apps.distinct(),
             nodes.filterNot { it.editable }.flatMap { it.labels }, nodes.mapNotNull { it.viewId },
             list = nodes.any { it.collection || it.className.contains("RecyclerView") || it.className.contains("ListView") },
-            inlineControls = nodes.any { it.checkable })
+            inlineControls = nodes.any { it.checkable },
+            tetheringControls = nodes.any { node -> !node.editable &&
+                (id(node.viewId.orEmpty()) in tetheringSwitchIds || node.checkable && node.labels.any(::isTetheringControlLabel)) })
     }
 
     private fun ourApp(label: String): Boolean = normalize(label).let {

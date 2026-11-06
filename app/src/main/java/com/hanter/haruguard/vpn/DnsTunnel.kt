@@ -62,9 +62,9 @@ internal class DnsTunnel(
         reader!!.start()
     }
 
-    fun applyPolicy(policy: FilterPolicy) {
-        if (connections.policy.settings == policy.settings) return
-        connections.applyPolicy(policy)
+    fun applySettings(settings: FilterSettings) {
+        if (connections.policy.settings == settings) return
+        connections.applyPolicy(FilterPolicy(settings))
         writes.clear()
     }
 
