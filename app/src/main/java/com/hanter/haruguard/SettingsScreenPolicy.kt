@@ -8,7 +8,7 @@ internal object SettingsScreenPolicy {
         APP("앱 관리"), ADMIN("기기 관리자"), ACCESSIBILITY("접근성"), VPN("VPN"),
         BATTERY("배터리 최적화"), BACKGROUND("백그라운드 실행"), ALARM("알람 권한"),
         RESET("초기화"), DEVELOPER("개발자옵션 활성화"), TETHERING("핫스팟·테더링"),
-        UNKNOWN_SOURCES("출처를 알 수 없는 앱 설치"),
+        UNKNOWN_SOURCES("출처를 알 수 없는 앱 설치"), STORE("앱 스토어"),
     }
     enum class Scope(val label: String) {
         OUR_APP("HaruGuard 상세 화면"), CATEGORY("해당 메뉴"),

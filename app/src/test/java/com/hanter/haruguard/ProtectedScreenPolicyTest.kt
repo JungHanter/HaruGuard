@@ -2,10 +2,61 @@ package com.hanter.haruguard
 
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 import com.hanter.haruguard.ProtectedScreenPolicy.Surface
 
 class ProtectedScreenPolicyTest {
+    @Test fun storeScreensAreProtectedBeforeAnyPageTextIsAvailable() {
+        assertEquals(SettingsScreenPolicy.Block(SettingsScreenPolicy.Area.STORE, SettingsScreenPolicy.Scope.CATEGORY),
+            ProtectedScreenPolicy.blockWithoutContent(Surface.STORE))
+        assertTrue(ProtectedScreenPolicy.shouldBlock(Surface.STORE, "", emptyList()))
+        assertTrue(ProtectedScreenPolicy.shouldBlock(Surface.STORE, "DetailActivity", listOf("Calculator")))
+        for (surface in listOf(null, Surface.SETTINGS, Surface.OTHER, Surface.LAUNCHER, Surface.SYSTEM_UI, Surface.INSTALLER)) {
+            assertNull(ProtectedScreenPolicy.blockWithoutContent(surface))
+        }
+    }
+
+    @Test fun storeNamesInOtherAppsHomeAndNotificationsDoNotTriggerProtection() {
+        val names = listOf("Play 스토어", "Galaxy Store", "com.android.vending", "com.sec.android.app.samsungapps")
+        assertFalse(ProtectedScreenPolicy.shouldBlock(Surface.OTHER, "MainActivity", names))
+        assertFalse(ProtectedScreenPolicy.shouldBlock(Surface.LAUNCHER, "Home", names))
+        assertFalse(ProtectedScreenPolicy.shouldBlock(Surface.SYSTEM_UI, "NotificationShade", names))
+    }
+
+    @Test fun storeAccessRequiresExplicitMaintenanceAndReturnsAtTheOriginalDeadline() {
+        var elapsed = 1_000L
+        val session = ParentSession { elapsed }
+        fun block() = ProtectedScreenPolicy.blockWithoutContent(Surface.STORE, session.maintenanceRemainingMillis() > 0)
+        assertEquals(SettingsScreenPolicy.Area.STORE, block()?.area)
+        session.authenticate(session.generation())
+        // PIN을 입력한 것만으로 스토어를 열지 않고, 명시적 임시 개방을 요구한다.
+        assertEquals(SettingsScreenPolicy.Area.STORE, block()?.area)
+        elapsed += 60_000L
+        session.openMaintenance()
+        session.lockAuthenticationOnly()
+        assertNull(block())
+        elapsed += ParentSession.AUTH_DURATION_MILLIS - 60_000L - 1
+        assertNull(block())
+        elapsed++
+        assertEquals(SettingsScreenPolicy.Area.STORE, block()?.area)
+    }
+
+    @Test fun lockingRevokesTemporaryStoreAccessAndVpnDialogsFollowTheSameRule() {
+        val session = ParentSession { 1_000L }
+        session.authenticate(session.generation())
+        session.openMaintenance()
+        for (surface in listOf(Surface.STORE, Surface.VPN_DIALOG)) {
+            assertNull(ProtectedScreenPolicy.blockWithoutContent(surface, session.maintenanceRemainingMillis() > 0))
+        }
+        session.lock()
+        assertEquals(SettingsScreenPolicy.Area.STORE, ProtectedScreenPolicy.blockWithoutContent(
+            Surface.STORE, session.maintenanceRemainingMillis() > 0)?.area)
+        assertEquals(SettingsScreenPolicy.Area.VPN, ProtectedScreenPolicy.blockWithoutContent(
+            Surface.VPN_DIALOG, session.maintenanceRemainingMillis() > 0)?.area)
+    }
+
     @Test fun hotspotDialogsAreProtectedWithoutClosingTheOrdinaryQuickPanel() {
         assertTrue(ProtectedScreenPolicy.shouldBlock(Surface.SYSTEM_UI, "WifiHotspotDialog", emptyList()))
         assertTrue(ProtectedScreenPolicy.shouldBlock(Surface.SYSTEM_UI, "Dialog", listOf("모바일 핫스팟", "켜기")))

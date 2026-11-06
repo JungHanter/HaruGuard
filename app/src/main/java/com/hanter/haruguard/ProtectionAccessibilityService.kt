@@ -254,21 +254,21 @@ class ProtectionAccessibilityService : AccessibilityService() {
             } finally { recycle(root) }
         }
         // 트리를 못 읽었다고 Settings 전체로 보호 범위를 확대하지 않는다.
-        // 실제 VPN·관리자·접근성 등의 클래스가 확인될 때만 제한적으로 보완한다.
+        // 실제 VPN·스토어 패키지나 관리자·접근성 등의 클래스가 확인될 때만 보완한다.
         val hintedBlock = freshHint?.let {
-            if (packageSurfaces[it.packageName] == ProtectedScreenPolicy.Surface.SETTINGS)
-                settingsBlock(SettingsScreenPolicy.Screen(className = it.className)) else null
+            val surface = packageSurfaces[it.packageName]
+            if (surface == ProtectedScreenPolicy.Surface.SETTINGS)
+                settingsBlock(SettingsScreenPolicy.Screen(className = it.className))
+            else ProtectedScreenPolicy.blockWithoutContent(surface, ParentAccess.isMaintenanceOpen())
         }
-        val hintedVpn = !ParentAccess.isMaintenanceOpen() &&
-            freshHint?.let { packageSurfaces[it.packageName] == ProtectedScreenPolicy.Surface.VPN_DIALOG } == true
-        if (foundTarget == null && freshHint != null && (hintedBlock != null || hintedVpn) &&
+        if (foundTarget == null && freshHint != null && hintedBlock != null &&
             ProtectedScreenPolicy.canUseMissingRootHint(
                 SystemClock.uptimeMillis() - freshHint.eventUptime,
                 matchingFocusedWindowWithoutRoot || (visibleWindows.isEmpty() && activePackage == null),
                 activePackage != null && activePackage != freshHint.packageName,
             )) {
-            foundTarget = BlockNavigation.Target(freshHint.windowId, hintedBlock?.area, freshHint.className.hashCode())
-            hintedBlock?.let { ProtectionRuntime.lastBlock = it }
+            foundTarget = BlockNavigation.Target(freshHint.windowId, hintedBlock.area, freshHint.className.hashCode())
+            ProtectionRuntime.lastBlock = hintedBlock
         }
         val target = foundTarget
         if (target != null) {
@@ -298,7 +298,10 @@ class ProtectionAccessibilityService : AccessibilityService() {
         // 5분 개방에서는 개발자옵션 활성화만 예외적으로 계속 보호한다.
         if (ParentAccess.isMaintenanceOpen() && surface != ProtectedScreenPolicy.Surface.SETTINGS) return null
         val target = BlockNavigation.Target(root.windowId)
-        if (surface == ProtectedScreenPolicy.Surface.VPN_DIALOG) return target
+        ProtectedScreenPolicy.blockWithoutContent(surface, ParentAccess.isMaintenanceOpen())?.let {
+            ProtectionRuntime.lastBlock = it
+            return target.copy(area = it.area)
+        }
         val samples = boundedSamples(root)
         val hint = windowHints[root.windowId]?.takeIf {
             it.packageName == root.packageName?.toString() &&
@@ -573,6 +576,7 @@ class ProtectionAccessibilityService : AccessibilityService() {
             ?.let { put(it, settings) }
         put("com.android.vpndialogs", ProtectedScreenPolicy.Surface.VPN_DIALOG)
         put("com.android.systemui", ProtectedScreenPolicy.Surface.SYSTEM_UI)
+        ProtectedScreenPolicy.storePackages.forEach { put(it, ProtectedScreenPolicy.Surface.STORE) }
         listOf("com.android.packageinstaller", "com.google.android.packageinstaller",
             "com.android.permissioncontroller", "com.google.android.permissioncontroller",
             "com.samsung.android.packageinstaller").forEach { put(it, ProtectedScreenPolicy.Surface.INSTALLER) }

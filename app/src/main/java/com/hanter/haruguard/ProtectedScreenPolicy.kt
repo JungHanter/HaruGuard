@@ -4,7 +4,23 @@ import java.util.Locale
 
 /** 화면 내용은 이 판정에만 잠시 사용하며 저장하거나 로그로 내보내지 않는다. */
 internal object ProtectedScreenPolicy {
-    enum class Surface { SETTINGS, VPN_DIALOG, INSTALLER, SYSTEM_UI, LAUNCHER, OTHER }
+    enum class Surface { SETTINGS, VPN_DIALOG, INSTALLER, SYSTEM_UI, LAUNCHER, STORE, OTHER }
+
+    // 두 스토어의 화면만 보호한다. Google Play 서비스·삼성 계정·다른 앱으로 확대하지 않는다.
+    // https://developer.android.com/distribute/marketing-tools/linking-to-google-play
+    // https://developer.samsung.com/galaxy-store/galaxy-store-content-provider-api/get-age-signals.html
+    val storePackages = setOf("com.android.vending", "com.sec.android.app.samsungapps")
+
+    /** 화면 내용 없이 판정할 수 있는 대상은 부모 임시 개방 여부까지 같은 규칙으로 처리한다. */
+    fun blockWithoutContent(surface: Surface?, maintenanceOpen: Boolean = false): SettingsScreenPolicy.Block? {
+        if (maintenanceOpen) return null
+        val area = when (surface) {
+            Surface.VPN_DIALOG -> SettingsScreenPolicy.Area.VPN
+            Surface.STORE -> SettingsScreenPolicy.Area.STORE
+            else -> return null
+        }
+        return SettingsScreenPolicy.Block(area, SettingsScreenPolicy.Scope.CATEGORY)
+    }
 
     fun shouldBlock(
         surface: Surface,
@@ -16,7 +32,7 @@ internal object ProtectedScreenPolicy {
     ): Boolean {
         // 설정 앱은 별도의 페이지·대상 앱 판정이 필요하다. 패키지 전체를 차단하지 않는다.
         if (surface == Surface.SETTINGS) return false
-        if (surface == Surface.VPN_DIALOG) return true
+        if (blockWithoutContent(surface) != null) return true
         if (surface == Surface.OTHER) return false
         val name = className.lowercase(Locale.ROOT)
         val values = labels.map { it.trim().lowercase(Locale.ROOT) }

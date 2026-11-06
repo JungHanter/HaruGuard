@@ -118,7 +118,7 @@ internal fun ProtectionScreen(
                             when (page) {
                                 ParentPage.MENU -> {
                                     StatusSummary(state, vpn)
-                                    ToggleCard("1. 설정 화면 보호", "HaruGuard 관리·권한과 VPN·핫스팟·테더링·초기화 설정을 보호합니다. 켜면 부모 인증이 종료됩니다.",
+                                    ToggleCard("1. 설정 화면 보호", "HaruGuard 관리·권한과 주요 설정, Play 스토어·Galaxy Store를 보호합니다. 켜면 부모 인증이 종료됩니다.",
                                         state.protection, !busy, onProtection)
                                     ToggleCard("2. VPN 필터 켜기", "선택한 서비스와 도메인 목록을 적용합니다. 부모가 끄면 자동 복구도 중지합니다.",
                                         state.filteringRequested, !busy && vpn.phase != VpnPhase.STARTING && vpn.phase != VpnPhase.STOPPING, onVpn)
@@ -189,6 +189,7 @@ private fun SetupControls(state: ParentUiState, alwaysOn: Boolean?, lockdown: Bo
         state.exactAlarm, busy) { onSettings(ParentSetting.EXACT_ALARM) }
     StatusButton("6. 상태 알림 (선택)", if (state.notifications) "허용됨" else "꺼짐 · VPN 실행 가능", state.notifications, busy) { onSettings(ParentSetting.NOTIFICATIONS) }
     Text("삼성 절전 목록·접근성 서비스 종료에 따른 실제 유지 여부는 기기에서 확인해 주세요.", style = MaterialTheme.typography.bodySmall)
+    Text("Play 스토어·Galaxy Store가 필요하면 아래 버튼으로 임시 개방하세요. 최초 부모 인증의 남은 시간 동안 사용할 수 있고, 만료되거나 ‘지금 잠그기’를 누르면 다시 보호합니다.", style = MaterialTheme.typography.bodySmall)
     Button(onClick = { onSettings(ParentSetting.ALL) }, enabled = !busy) { Text("남은 시간 동안 설정 열기") }
 }
 
@@ -204,7 +205,7 @@ private fun OtherControls(busy: Boolean, onAuth: (ParentAuthAction, String, Stri
     OutlinedButton(onClick = { showRemove = true }, enabled = !busy) { Text("보호 해제 및 앱 제거 준비") }
     ProtectionRuntime.lastBlock?.let { Text("마지막 차단: ${it.area.label} · ${it.scope.label}", style = MaterialTheme.typography.bodySmall) }
     Text("개발자옵션을 켜려면 설정 화면 보호를 먼저 끄세요. 임시 개방만으로는 활성화할 수 없습니다. 사용 후 개발자옵션을 끄고 보호를 다시 켜세요.", style = MaterialTheme.typography.bodySmall)
-    Text("설정 보호는 HaruGuard 앱 관리·실행 권한과 관리자·접근성·VPN·핫스팟·테더링·초기화 화면을 대상으로 합니다. Wi-Fi·밝기·소리 등 일반 설정은 사용할 수 있습니다. 앱별 상세 화면은 HaruGuard로 확인된 경우에만 보호합니다. 목록에서 바로 권한을 바꾸는 경우에는 해당 목록을 보호합니다.", style = MaterialTheme.typography.bodySmall)
+    Text("설정 보호는 HaruGuard 앱 관리·실행 권한과 관리자·접근성·VPN·핫스팟·테더링·초기화 화면, Play 스토어·Galaxy Store를 대상으로 합니다. Wi-Fi·밝기·소리 등 일반 설정은 사용할 수 있습니다. 앱별 상세 화면은 HaruGuard로 확인된 경우에만 보호합니다. 목록에서 바로 권한을 바꾸는 경우에는 해당 목록을 보호합니다.", style = MaterialTheme.typography.bodySmall)
     Text(stringResource(R.string.p0_security_note), style = MaterialTheme.typography.bodySmall)
     Text(stringResource(R.string.vpn_test_note), style = MaterialTheme.typography.bodySmall)
     if (showRemove) AlertDialog(onDismissRequest = { showRemove = false },
