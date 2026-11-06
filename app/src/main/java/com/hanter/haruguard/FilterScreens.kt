@@ -43,6 +43,7 @@ internal fun FilterControls(
         return
     }
     if (!vpnRequested) Text("VPN이 꺼져 있습니다. 목록은 저장되며 VPN을 켜면 적용됩니다.")
+    Text(stringResource(R.string.vpn_excluded_apps_note), style = MaterialTheme.typography.bodySmall)
     Text("A. 서비스별 웹 차단 / 공식 앱 허용", style = MaterialTheme.typography.titleMedium)
     Text("켜면 해당 서비스의 웹·다른 앱 내 접속을 차단하고 지원 공식 앱에서만 허용합니다. 다른 차단 목록에 등록한 도메인은 공식 앱에서도 차단합니다.", style = MaterialTheme.typography.bodySmall)
     FilterService.entries.forEach { service ->
@@ -50,23 +51,23 @@ internal fun FilterControls(
             service in settings.enabledServices, !busy) { onService(service, it) }
     }
     Text("B. 카카오톡 숏폼", style = MaterialTheme.typography.titleMedium)
-    ToggleCard("카카오톡 숏폼 차단", "모든 앱에서 목록의 도메인 차단 · ${settings.kakaoDomains.size}개",
+    ToggleCard("카카오톡 숏폼 차단", "VPN 대상 앱에서 목록의 도메인 차단 · ${settings.kakaoDomains.size}개",
         settings.kakaoEnabled, !busy) { onGroup(DomainGroup.KAKAO, it) }
     MenuButton("카카오톡 숏폼 도메인 편집", "기본 후보 주소 추가·수정·삭제") { onNavigate(ParentPage.KAKAO) }
     Text("C. 네이버 클립", style = MaterialTheme.typography.titleMedium)
-    ToggleCard("네이버 클립 차단", "네이버 앱을 포함한 모든 앱에서 목록의 도메인 차단 · ${settings.naverDomains.size}개",
+    ToggleCard("네이버 클립 차단", "네이버 앱을 포함한 VPN 대상 앱에서 목록의 도메인 차단 · ${settings.naverDomains.size}개",
         settings.naverEnabled, !busy) { onGroup(DomainGroup.NAVER, it) }
     MenuButton("네이버 클립 도메인 편집", "기본 후보 주소 추가·수정·삭제") { onNavigate(ParentPage.NAVER) }
     Text("D. 광고 차단", style = MaterialTheme.typography.titleMedium)
-    ToggleCard("광고 차단", "일반 광고를 포함해 광고 서버 후보를 모든 앱에서 차단 · ${settings.adDomains.size}개",
+    ToggleCard("광고 차단", "일반 광고를 포함해 광고 서버 후보를 VPN 대상 앱에서 차단 · ${settings.adDomains.size}개",
         settings.adsEnabled, !busy) { onGroup(DomainGroup.ADS, it) }
     MenuButton("광고 도메인 편집", "YousList에서 선별한 기본 목록 추가·수정·삭제") { onNavigate(ParentPage.ADS) }
     Text("E. P2P 차단", style = MaterialTheme.typography.titleMedium)
-    ToggleCard("P2P 차단", "토렌트·웹하드 등 목록의 도메인을 모든 앱에서 차단 · ${settings.p2pDomains.size}개",
+    ToggleCard("P2P 차단", "토렌트·웹하드 등 목록의 도메인을 VPN 대상 앱에서 차단 · ${settings.p2pDomains.size}개",
         settings.p2pEnabled, !busy) { onGroup(DomainGroup.P2P, it) }
     MenuButton("P2P 도메인 편집", "기본 목록 추가·수정·삭제") { onNavigate(ParentPage.P2P) }
     Text("F. 사용자 지정 차단 도메인", style = MaterialTheme.typography.titleMedium)
-    MenuButton("사용자 지정 도메인 편집", "${settings.customDomains.size}개 · 공식 앱을 포함한 모든 앱에서 차단") { onNavigate(ParentPage.CUSTOM) }
+    MenuButton("사용자 지정 도메인 편집", "${settings.customDomains.size}개 · 공식 앱을 포함한 VPN 대상 앱에서 차단") { onNavigate(ParentPage.CUSTOM) }
     Text("숏폼 기본 목록은 공개 자료를 바탕으로 선정한 후보입니다. 모든 숏폼이 차단되거나 일반 기능에 영향이 없다고 확인된 목록은 아닙니다. 문제가 생기면 해당 토글을 끄거나 주소를 편집하세요.", style = MaterialTheme.typography.bodySmall)
 }
 
@@ -88,7 +89,7 @@ internal fun DomainListScreen(
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (group != DomainGroup.CUSTOM) {
-                    ToggleCard("${group.title} 차단", "목록의 도메인을 모든 앱에서 차단합니다.", settings.enabled(group), !busy) { onGroup(group, it) }
+                    ToggleCard("${group.title} 차단", "목록의 도메인을 VPN 대상 앱에서 차단합니다.", settings.enabled(group), !busy) { onGroup(group, it) }
                     Text("기본 주소는 공개 자료에서 찾은 후보입니다. 직접 추가·수정·삭제할 수 있고, 삭제한 기본 주소는 자동으로 다시 넣지 않습니다.", style = MaterialTheme.typography.bodySmall)
                     if (group == DomainGroup.NAVER) Text("일부 클립은 일반 네이버 서비스와 주소를 공유해 남을 수 있습니다. 클립 관련 댓글·프로필 기능에도 영향이 있을 수 있으니 문제가 있으면 주소를 제거하세요.", style = MaterialTheme.typography.bodySmall)
                     if (group == DomainGroup.ADS) {
@@ -103,6 +104,7 @@ internal fun DomainListScreen(
                 }
                 Text("도메인만 입력하세요. 예: dcinside.com\nhttp://, https://, /경로는 넣지 마세요. 루트와 모든 하위 도메인을 HTTP·HTTPS 구분 없이 차단합니다.", style = MaterialTheme.typography.bodySmall)
                 Text("공식 앱에도 예외 없이 적용됩니다. VPN이 켜져 있어야 하며 자체 DNS·이미 열린 연결·저장된 영상은 차단되지 않을 수 있습니다.", style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.vpn_excluded_apps_note), style = MaterialTheme.typography.bodySmall)
                 Text(stringResource(R.string.filter_reconnect_hint), style = MaterialTheme.typography.bodySmall)
                 Button(onClick = { error = null; editing = DomainEdit(null) }, enabled = !busy && domains.size < DomainInput.MAX_DOMAINS) { Text("도메인 추가") }
                 Text("${domains.size} / ${DomainInput.MAX_DOMAINS}개" + if (!settings.enabled(group)) " · 현재 목록 차단 꺼짐" else "")

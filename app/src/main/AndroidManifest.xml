@@ -20,6 +20,11 @@
         <package android:name="com.facebook.katana" />
         <package android:name="com.twitter.android" />
         <package android:name="com.vimeo.android.videoapp" />
+        <!-- Android 11 이상에서도 VPN 제외 대상 앱을 정확히 확인할 수 있게 한다. -->
+        <package android:name="com.samsung.android.spay" />
+        <package android:name="com.samsung.android.samsungpass" />
+        <package android:name="com.samsung.android.samsungpassautofill" />
+        <package android:name="com.kt.ktauth" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.HOME" />

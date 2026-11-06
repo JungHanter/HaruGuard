@@ -8,6 +8,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.net.Network
@@ -177,6 +178,17 @@ class YouTubeVpnService : VpnService() {
             ensureForeground()
             val policy = FilterPolicy(filterPreferences.load())
             val descriptor = Builder()
+                .apply {
+                    // 결제·인증 앱은 DNS와 데이터 통신 모두 VPN에서 제외한다.
+                    // https://developer.android.com/develop/connectivity/vpn#disallowed-apps
+                    VPN_EXCLUDED_PACKAGES.forEach { packageName ->
+                        try {
+                            addDisallowedApplication(packageName)
+                        } catch (_: PackageManager.NameNotFoundException) {
+                            // 미설치 앱 하나 때문에 다른 앱의 VPN 필터가 중단되지 않게 한다.
+                        }
+                    }
+                }
                 .setSession(getString(R.string.vpn_session))
                 .setConfigureIntent(openAppIntent())
                 .setMtu(32_767)
@@ -360,6 +372,17 @@ class YouTubeVpnService : VpnService() {
         private const val CHANNEL = "youtube_filter"
         private const val NOTIFICATION_ID = 1
         private const val HEALTH_CHECK_MS = 5_000L
+        // 공식 스토어에서 확인한 결제·인증 앱 패키지만 제외한다.
+        // https://galaxystore.samsung.com/detail/com.samsung.android.spay
+        // https://galaxystore.samsung.com/detail/com.samsung.android.samsungpass
+        // https://galaxystore.samsung.com/detail/com.samsung.android.samsungpassautofill
+        // https://play.google.com/store/apps/details?id=com.kt.ktauth
+        private val VPN_EXCLUDED_PACKAGES = listOf(
+            "com.samsung.android.spay", // 삼성월렛
+            "com.samsung.android.samsungpass", // 삼성 Pass
+            "com.samsung.android.samsungpassautofill", // Samsung Pass 자동 입력
+            "com.kt.ktauth", // PASS by KT
+        )
         private var runningService: WeakReference<YouTubeVpnService>? = null
 
         /** 부모의 VPN OFF 선택을 바꾸거나 새 서비스를 시작하지 않고 실행 중 정책만 교체한다. */
