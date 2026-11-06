@@ -247,15 +247,53 @@ class SettingsScreenPolicyTest {
         assertNull(SettingsScreenPolicy.block(Screen(headings = listOf("App info"), appLabels = listOf("Calculator"))))
     }
 
-    @Test fun unidentifiableAppDetailsAreTheFallbackBoundaryRatherThanAllSettings() {
-        assertEquals(Block(Area.APP, Scope.UNKNOWN_APP), SettingsScreenPolicy.block(Screen(className = "AppInfoDashboardFragment")))
+    @Test fun appDetailsRequireOurAppIdentityEvenWhenThePageClassOrControlsAreKnown() {
+        for ((page, area) in listOf(
+            Screen(className = "AppInfoDashboardFragment") to Area.APP,
+            Screen(className = "InstalledAppDetails") to Area.APP,
+            Screen(className = "AppStorageSettings") to Area.APP,
+            Screen(headings = listOf("애플리케이션 정보")) to Area.APP,
+            Screen(viewIds = listOf("com.android.settings:id/force_stop_button")) to Area.APP,
+            Screen(className = "HighPowerDetail") to Area.BATTERY,
+            Screen(className = "AlarmsAndRemindersDetails") to Area.ALARM,
+            Screen(className = "AdvancedPowerUsageDetail") to Area.BACKGROUND,
+        )) {
+            assertNull(page.toString(), SettingsScreenPolicy.block(page))
+            assertNull(page.toString(), SettingsScreenPolicy.block(page.copy(appLabels = listOf("Calculator"))))
+            assertEquals(page.toString(), Block(area, Scope.OUR_APP),
+                SettingsScreenPolicy.block(page.copy(appLabels = listOf("HaruGuard"))))
+        }
         assertNull(SettingsScreenPolicy.block(Screen(className = "SubSettings")))
         assertNull(SettingsScreenPolicy.block(Screen(headings = listOf("Apps"))))
     }
 
+    @Test fun losingAnotherAppHeaderDuringRepeatedInspectionDoesNotCloseItsInfoPage() {
+        val nodes = listOf(
+            Node(-1, listOf("앱 정보"), "com.android.settings:id/page_title", "TextView"),
+            Node(-1, listOf("Calculator"), "com.android.settings:id/entity_header_title", "TextView"),
+            Node(-1, listOf("강제 중지"), "com.android.settings:id/force_stop_button", "Button"),
+        )
+        for (app in listOf("Calculator", "", "Calculator", "")) {
+            val snapshot = nodes.toMutableList().apply { this[1] = this[1].copy(labels = listOf(app)) }
+            val page = SettingsScreenPolicy.screen("AppInfoDashboardFragment", snapshot)
+            assertNull("header=$app", SettingsScreenPolicy.block(page))
+        }
+        val ours = nodes.toMutableList().apply { this[1] = this[1].copy(labels = listOf("HaruGuard")) }
+        assertEquals(Block(Area.APP, Scope.OUR_APP), SettingsScreenPolicy.block(
+            SettingsScreenPolicy.screen("AppInfoDashboardFragment", ours)))
+    }
+
+    @Test fun ambiguousAppHeadersDoNotBecomeOurAppIdentity() {
+        val page = Screen(headings = listOf("App info"), appLabels = listOf("HaruGuard", "Calculator"))
+        assertNull(SettingsScreenPolicy.block(page))
+        assertNull(SettingsScreenPolicy.block(page.copy(appLabels = listOf(" "))))
+    }
+
     @Test fun ourAppStorageAndDirectClearDataPageAreProtected() {
         assertEquals(Block(Area.APP, Scope.OUR_APP), SettingsScreenPolicy.block(Screen(headings = listOf("Storage & cache"), appLabels = listOf("하루가드"))))
-        assertEquals(Block(Area.APP, Scope.UNKNOWN_APP), SettingsScreenPolicy.block(Screen(viewIds = listOf("com.android.settings:id/clear_data_button"))))
+        val clearData = Screen(viewIds = listOf("com.android.settings:id/clear_data_button"))
+        assertNull(SettingsScreenPolicy.block(clearData))
+        assertEquals(Block(Area.APP, Scope.OUR_APP), SettingsScreenPolicy.block(clearData.copy(appLabels = listOf("HaruGuard"))))
         assertNull(SettingsScreenPolicy.block(Screen(headings = listOf("Storage"), labels = listOf("Apps", "HaruGuard"))))
     }
 
@@ -290,10 +328,10 @@ class SettingsScreenPolicyTest {
         assertNull(SettingsScreenPolicy.block(Screen(headings = listOf("Alarms & reminders"), appLabels = listOf("Calculator"))))
     }
 
-    @Test fun alarmListWithInlineSwitchesAndUnknownAlarmDetailFailClosedWithinTheirPage() {
+    @Test fun alarmListWithInlineSwitchesRemainsProtectedButUnknownAppDetailIsAllowed() {
         assertEquals(Block(Area.ALARM, Scope.INLINE_LIST), SettingsScreenPolicy.block(Screen(
             headings = listOf("Alarms & reminders"), inlineControls = true, list = true)))
-        assertEquals(Block(Area.ALARM, Scope.UNKNOWN_APP), SettingsScreenPolicy.block(Screen(className = "AlarmsAndRemindersDetails")))
+        assertNull(SettingsScreenPolicy.block(Screen(className = "AlarmsAndRemindersDetails")))
     }
 
     @Test fun backgroundAppDetailsDistinguishAppsAndNormalUsageListStaysOpen() {

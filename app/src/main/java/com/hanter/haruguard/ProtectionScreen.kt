@@ -204,7 +204,7 @@ private fun OtherControls(busy: Boolean, onAuth: (ParentAuthAction, String, Stri
     OutlinedButton(onClick = { showRemove = true }, enabled = !busy) { Text("보호 해제 및 앱 제거 준비") }
     ProtectionRuntime.lastBlock?.let { Text("마지막 차단: ${it.area.label} · ${it.scope.label}", style = MaterialTheme.typography.bodySmall) }
     Text("개발자옵션을 켜려면 설정 화면 보호를 먼저 끄세요. 임시 개방만으로는 활성화할 수 없습니다. 사용 후 개발자옵션을 끄고 보호를 다시 켜세요.", style = MaterialTheme.typography.bodySmall)
-    Text("설정 보호는 HaruGuard 앱 관리·실행 권한과 관리자·접근성·VPN·핫스팟·테더링·초기화 화면을 대상으로 합니다. Wi-Fi·밝기·소리 등 일반 설정은 사용할 수 있습니다. 앱을 구분할 수 없는 상세 화면이나 목록에서 바로 권한을 바꾸는 경우에는 해당 화면·목록을 보호합니다.", style = MaterialTheme.typography.bodySmall)
+    Text("설정 보호는 HaruGuard 앱 관리·실행 권한과 관리자·접근성·VPN·핫스팟·테더링·초기화 화면을 대상으로 합니다. Wi-Fi·밝기·소리 등 일반 설정은 사용할 수 있습니다. 앱별 상세 화면은 HaruGuard로 확인된 경우에만 보호합니다. 목록에서 바로 권한을 바꾸는 경우에는 해당 목록을 보호합니다.", style = MaterialTheme.typography.bodySmall)
     Text(stringResource(R.string.p0_security_note), style = MaterialTheme.typography.bodySmall)
     Text(stringResource(R.string.vpn_test_note), style = MaterialTheme.typography.bodySmall)
     if (showRemove) AlertDialog(onDismissRequest = { showRemove = false },

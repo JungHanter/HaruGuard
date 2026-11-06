@@ -12,7 +12,7 @@ internal object SettingsScreenPolicy {
     }
     enum class Scope(val label: String) {
         OUR_APP("HaruGuard 상세 화면"), CATEGORY("해당 메뉴"),
-        UNKNOWN_APP("대상 앱을 구분할 수 없는 상세 화면"), INLINE_LIST("직접 변경이 가능한 목록"),
+        INLINE_LIST("직접 변경이 가능한 목록"),
     }
     data class Block(val area: Area, val scope: Scope)
     data class Node(
@@ -187,11 +187,9 @@ internal object SettingsScreenPolicy {
                 "Never auto sleeping apps", "백그라운드 사용 제한", "절전 상태 앱", "초절전 상태 앱", "절전 예외 앱", "절전 상태로 전환하지 않을 앱")
             return if (screen.inlineControls || sleepList) Block(area, Scope.INLINE_LIST) else null
         }
-        return when {
-            ours -> Block(area, Scope.OUR_APP)
-            knownApp -> null
-            else -> Block(area, Scope.UNKNOWN_APP)
-        }
+        // 대상 이름이 일시적으로 누락돼도 다른 앱까지 막지 않는다.
+        // 앱별 상세 화면은 HaruGuard로 확인된 경우에만 보호한다.
+        return if (ours) Block(area, Scope.OUR_APP) else null
     }
 
     /** 목록 행의 HaruGuard 이름을 상세 화면의 대상 앱으로 잘못 해석하지 않는다. */
